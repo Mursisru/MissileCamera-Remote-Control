@@ -47,6 +47,8 @@ namespace MissileCameraRemoteControl.HarmonyPatches
         {
             try
             {
+                if (!Network.RcServerCompat.FeaturesAllowed)
+                    return;
                 LaunchRcCapture.EnqueueFromWeapon(__instance);
             }
             catch

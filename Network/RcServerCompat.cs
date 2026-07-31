@@ -1,5 +1,6 @@
 using System;
 using Mirage;
+using MissileCameraRemoteControl.Cloning;
 using MissileCameraRemoteControl.Config;
 using MissileCameraRemoteControl.Control;
 using NuclearOption.Networking;
@@ -8,16 +9,16 @@ using UnityEngine;
 namespace MissileCameraRemoteControl.Network
 {
     /// <summary>
-    /// MP presence gate (fail-closed on pure clients):
-    /// RC stays on only after the server replies that it also runs this addon.
-    /// Vanilla / no reply → Denied for the session. Host / SP always on.
+    /// MP presence gate (fail-closed on pure clients).
+    /// Detects online by NetworkMode.Client (not GameState — lobby stays Menu).
+    /// Vanilla lobby or no presence reply → Denied until disconnect.
     /// </summary>
     internal static class RcServerCompat
     {
         internal const int PresenceMagic = unchecked((int)0x4D435243); // 'MCRC'
 
-        private const float DefaultTimeoutSec = 4f;
-        private const float QueryRetrySec = 1.0f;
+        private const float DefaultTimeoutSec = 3f;
+        private const float QueryRetrySec = 0.75f;
 
         private enum Phase : byte
         {
@@ -35,11 +36,8 @@ namespace MissileCameraRemoteControl.Network
         private static bool _loggedResult;
         private static int _nmInstanceId;
         private static NetworkManagerMode _lastMode = NetworkManagerMode.None;
+        private static bool _strippedOnDeny;
 
-        /// <summary>
-        /// Runtime allow for RC features.
-        /// Online clients: only after Allowed. Host/SP/menu: on (unless config off).
-        /// </summary>
         internal static bool FeaturesAllowed
         {
             get
@@ -47,14 +45,25 @@ namespace MissileCameraRemoteControl.Network
                 if (!RcConfig.Enabled.Value)
                     return false;
 
-                if (!IsOnlineSession())
+                NetworkManagerMode mode = TryGetNetworkMode();
+
+                // Offline menu / SP / encyclopedia — full features.
+                if (mode == NetworkManagerMode.None && !IsGameStateOnline())
                     return true;
 
-                if (IsLocalHostOrDedicated())
+                // We are the server / listen-host.
+                if (mode == NetworkManagerMode.Host || mode == NetworkManagerMode.Server)
                     return true;
 
-                // Pure client in MP — fail closed until presence confirmed.
-                return _phase == Phase.Allowed;
+                // Pure client — only after presence Allowed.
+                if (mode == NetworkManagerMode.Client)
+                    return _phase == Phase.Allowed;
+
+                // Fallback: Multiplayer GameState without resolved mode yet.
+                if (IsGameStateOnline())
+                    return _phase == Phase.Allowed;
+
+                return true;
             }
         }
 
@@ -67,6 +76,7 @@ namespace MissileCameraRemoteControl.Network
             _nextQuery = 0f;
             _loggedResult = false;
             _lastMode = NetworkManagerMode.None;
+            _strippedOnDeny = false;
         }
 
         internal static void Tick()
@@ -84,37 +94,59 @@ namespace MissileCameraRemoteControl.Network
 
         private static void Evaluate()
         {
-            if (!IsOnlineSession())
-            {
-                if (_phase == Phase.Denied || _phase == Phase.Checking)
-                    RcPlugin.ModLogger?.LogInfo("RC re-enabled (left multiplayer session).");
-                _phase = Phase.Allowed;
-                _loggedResult = false;
-                return;
-            }
-
             NetworkManagerMode mode = TryGetNetworkMode();
             if (mode != _lastMode)
             {
                 _lastMode = mode;
-                RcPlugin.ModLogger?.LogInfo($"RC presence: NetworkMode={mode}, phase={_phase}");
+                RcPlugin.ModLogger?.LogInfo(
+                    $"RC presence: NetworkMode={mode}, GameState={SafeGameState()}, phase={_phase}, ModdedServer={SafeModdedFlag()}");
             }
 
-            // Listen-host or dedicated process with this mod loaded.
-            if (mode == NetworkManagerMode.Host || mode == NetworkManagerMode.Server
-                || IsLocalHostOrDedicated())
+            // Host / dedicated with this plugin — always on.
+            if (mode == NetworkManagerMode.Host || mode == NetworkManagerMode.Server)
             {
                 if (_phase != Phase.Allowed)
-                    SetAllowed(fromCheck: false);
+                {
+                    _phase = Phase.Allowed;
+                    _strippedOnDeny = false;
+                }
                 return;
             }
 
-            // Lobby tagged vanilla — no need to wait for handshake.
+            // Pure remote client (lobby Menu OR Multiplayer mission).
+            if (mode == NetworkManagerMode.Client && IsClientActive())
+            {
+                EvaluateAsClient();
+                return;
+            }
+
+            // Not connected as client — restore if we had been denied/checking.
+            if (_phase == Phase.Denied || _phase == Phase.Checking)
+            {
+                RcPlugin.ModLogger?.LogInfo("RC re-enabled (left multiplayer / disconnected).");
+                _phase = Phase.Allowed;
+                _loggedResult = false;
+                _strippedOnDeny = false;
+                try { HardpointInjector.InjectAll(RcPlugin.ModLogger); }
+                catch { /* ignore */ }
+                return;
+            }
+
+            if (!IsGameStateOnline())
+            {
+                _phase = Phase.Allowed;
+                _loggedResult = false;
+            }
+        }
+
+        private static void EvaluateAsClient()
+        {
+            // Fast path: Steam lobby tagged vanilla.
             try
             {
                 if (NetworkManagerNuclearOption.ModdedServer == false)
                 {
-                    SetDenied("lobby marked vanilla (modded_server=0)");
+                    SetDenied("lobby modded_server=0 (vanilla)");
                     return;
                 }
             }
@@ -123,16 +155,14 @@ namespace MissileCameraRemoteControl.Network
                 // ignore
             }
 
-            // Still connecting — keep fail-closed (FeaturesAllowed already false).
-            if (mode != NetworkManagerMode.Client || !IsClientActive())
+            if (_phase == Phase.Allowed)
+                return;
+
+            if (_phase == Phase.Denied)
             {
-                if (_phase != Phase.Denied && _phase != Phase.Checking && _phase != Phase.Allowed)
-                    _phase = Phase.Idle;
+                EnsureStripped();
                 return;
             }
-
-            if (_phase == Phase.Allowed || _phase == Phase.Denied)
-                return;
 
             if (_phase != Phase.Checking)
                 BeginCheck();
@@ -145,13 +175,14 @@ namespace MissileCameraRemoteControl.Network
             }
 
             if (now >= _deadline)
-                SetDenied("no presence reply from server");
+                SetDenied("no presence reply (server likely missing this addon)");
         }
 
         private static void BeginCheck()
         {
             _phase = Phase.Checking;
             _loggedResult = false;
+            _strippedOnDeny = false;
             float timeout = DefaultTimeoutSec;
             try
             {
@@ -166,7 +197,7 @@ namespace MissileCameraRemoteControl.Network
             _deadline = Time.unscaledTime + timeout;
             _nextQuery = 0f;
             RcPlugin.ModLogger?.LogInfo(
-                "RC: checking whether the server runs MissileCamera Remote Control…");
+                "RC: client session — checking server for MissileCamera Remote Control…");
             SendQuery();
         }
 
@@ -174,6 +205,7 @@ namespace MissileCameraRemoteControl.Network
         {
             Phase prev = _phase;
             _phase = Phase.Allowed;
+            _strippedOnDeny = false;
             if (_loggedResult)
                 return;
             if (fromCheck || prev == Phase.Checking || prev == Phase.Denied)
@@ -185,18 +217,37 @@ namespace MissileCameraRemoteControl.Network
 
         private static void SetDenied(string reason)
         {
-            if (_phase == Phase.Denied)
-                return;
-            _phase = Phase.Denied;
-            if (!_loggedResult)
+            if (_phase != Phase.Denied)
             {
-                _loggedResult = true;
-                RcPlugin.ModLogger?.LogWarning(
-                    $"RC: disabled for this session ({reason}). Server lacks MissileCamera Remote Control.");
+                _phase = Phase.Denied;
+                if (!_loggedResult)
+                {
+                    _loggedResult = true;
+                    RcPlugin.ModLogger?.LogWarning(
+                        $"RC DISABLED this session: {reason}");
+                }
+
+                try { RemoteControlSession.Clear(); }
+                catch { /* ignore */ }
             }
 
-            try { RemoteControlSession.Clear(); }
-            catch { /* ignore */ }
+            EnsureStripped();
+        }
+
+        private static void EnsureStripped()
+        {
+            if (_strippedOnDeny)
+                return;
+            _strippedOnDeny = true;
+            try
+            {
+                int n = HardpointInjector.StripAllRcOptions(RcPlugin.ModLogger);
+                RcPlugin.ModLogger?.LogInfo($"RC: stripped {n} RC mount option(s) while disabled.");
+            }
+            catch (Exception ex)
+            {
+                RcPlugin.ModLogger?.LogWarning($"RC strip failed: {ex.Message}");
+            }
         }
 
         private static void OnPresenceReply(INetworkPlayer player, RcPresenceReplyMsg msg)
@@ -204,6 +255,8 @@ namespace MissileCameraRemoteControl.Network
             if (msg.Magic != PresenceMagic)
                 return;
             SetAllowed(fromCheck: true);
+            try { HardpointInjector.InjectAll(RcPlugin.ModLogger); }
+            catch { /* ignore */ }
         }
 
         private static void OnPresenceQuery(INetworkPlayer player, RcPresenceQueryMsg msg)
@@ -235,7 +288,7 @@ namespace MissileCameraRemoteControl.Network
             }
         }
 
-        private static bool IsOnlineSession()
+        private static bool IsGameStateOnline()
         {
             try
             {
@@ -245,6 +298,25 @@ namespace MissileCameraRemoteControl.Network
             catch
             {
                 return false;
+            }
+        }
+
+        private static string SafeGameState()
+        {
+            try { return GameManager.gameState.ToString(); }
+            catch { return "?"; }
+        }
+
+        private static string SafeModdedFlag()
+        {
+            try
+            {
+                bool? m = NetworkManagerNuclearOption.ModdedServer;
+                return m == null ? "null" : m.Value.ToString();
+            }
+            catch
+            {
+                return "?";
             }
         }
 
@@ -258,31 +330,6 @@ namespace MissileCameraRemoteControl.Network
             catch
             {
                 return NetworkManagerMode.None;
-            }
-        }
-
-        private static bool IsLocalHostOrDedicated()
-        {
-            try
-            {
-                NetworkManagerNuclearOption? nm = NetworkManagerNuclearOption.i;
-                if (nm == null)
-                    return false;
-
-                NetworkManagerMode mode = nm.NetworkMode;
-                if (mode == NetworkManagerMode.Host || mode == NetworkManagerMode.Server)
-                    return true;
-
-                // Fallback if NetworkMode lags behind Server.Active on listen-host.
-                if (nm.Server != null && nm.Server.Active
-                    && (nm.Client == null || !nm.Client.Active || nm.Client.IsHost))
-                    return true;
-
-                return false;
-            }
-            catch
-            {
-                return false;
             }
         }
 
