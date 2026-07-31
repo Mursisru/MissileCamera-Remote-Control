@@ -195,5 +195,19 @@ namespace MissileCameraRemoteControl.Control
                 _log?.LogWarning($"RC tick error: {ex.Message}");
             }
         }
+
+        private void FixedUpdate()
+        {
+            if (!RcConfig.Enabled.Value)
+                return;
+            try
+            {
+                RemoteControlSession.FixedTick();
+            }
+            catch
+            {
+                // ignore
+            }
+        }
     }
 }

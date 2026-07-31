@@ -5,24 +5,27 @@ using UnityEngine;
 namespace MissileCameraRemoteControl.Control
 {
     /// <summary>
-    /// WT mouse-aim with a stable world-space DIRECTION (not a fixed world point).
-    /// Fixed world points teleport the reticle when the missile flies past / aim goes behind the feed cam.
+    /// WT mouse-aim: world yaw/pitch (no gimbal at zenith/nadir).
+    /// Reticle and SetAimpoint share the same direction — no soft-lead overshoot.
     /// </summary>
     internal static class MouseGuidanceController
     {
         private const float MouseDegPerUnit = 1.25f;
         private const float MouseDeadzone = 0.02f;
-        private const float SoftLeadSeconds = 0.3f;
-        private const float MaxCommandAngleDeg = 50f;
+        private const float MaxPitchDeg = 89f;
+        // Match vanilla Steering Dot&lt;0.71 clamp (~45°) so command ≈ what aero accepts.
+        private const float MaxCommandAngleDeg = 45f;
 
-        private static Vector3 _worldAimDir = Vector3.forward;
+        private static float _aimYawDeg;
+        private static float _aimPitchDeg;
         private static bool _initialized;
         private static Vector2 _lastStableViewport = new Vector2(0.5f, 0.5f);
 
         internal static void Reset()
         {
             _initialized = false;
-            _worldAimDir = Vector3.forward;
+            _aimYawDeg = 0f;
+            _aimPitchDeg = 0f;
             _lastStableViewport = new Vector2(0.5f, 0.5f);
         }
 
@@ -41,25 +44,20 @@ namespace MissileCameraRemoteControl.Control
                 Vector3 fwd = view.forward;
                 if (fwd.sqrMagnitude < 1e-6f)
                     fwd = mt.forward;
-                _worldAimDir = fwd.normalized;
+                FromDirection(fwd.normalized);
                 _initialized = true;
             }
 
-            // Mouse only — deadzone kills stick noise / tiny axis jitter.
             float mx = Input.GetAxisRaw("Mouse X");
             float my = Input.GetAxisRaw("Mouse Y");
             if (mx * mx + my * my >= MouseDeadzone * MouseDeadzone)
             {
                 float sens = Mathf.Max(0.02f, RcConfig.MouseSensitivity.Value) * MouseDegPerUnit;
-                Quaternion yaw = Quaternion.AngleAxis(mx * sens, view.up);
-                Quaternion pitch = Quaternion.AngleAxis(-my * sens, view.right);
-                Vector3 rotated = yaw * pitch * _worldAimDir;
-                if (rotated.sqrMagnitude > 1e-6f)
-                    _worldAimDir = rotated.normalized;
+                ApplyMouseCameraRelative(view, mx * sens, -my * sens);
             }
 
-            // Aim point rides with the missile along the fixed world direction (never "flies past").
-            Vector3 worldAimPoint = mt.position + _worldAimDir * dist;
+            Vector3 worldAimDir = ToDirection();
+            Vector3 worldAimPoint = mt.position + worldAimDir * dist;
 
             Vector3 refDir = mt.forward;
             try
@@ -72,26 +70,12 @@ namespace MissileCameraRemoteControl.Control
                 // ignore
             }
 
-            Vector3 desiredDir = _worldAimDir;
-            float ang = Vector3.Angle(refDir, desiredDir);
-            Vector3 cmdDir = desiredDir;
+            Vector3 cmdDir = worldAimDir;
+            float ang = Vector3.Angle(refDir, worldAimDir);
             if (ang > MaxCommandAngleDeg)
-                cmdDir = Vector3.RotateTowards(refDir, desiredDir, MaxCommandAngleDeg * Mathf.Deg2Rad, 0f);
+                cmdDir = Vector3.RotateTowards(refDir, worldAimDir, MaxCommandAngleDeg * Mathf.Deg2Rad, 0f);
 
             Vector3 cmdPoint = mt.position + cmdDir * dist;
-            try
-            {
-                if (missile.rb != null)
-                {
-                    float lead = Mathf.Clamp(SoftLeadSeconds * (1f + missile.rb.velocity.magnitude / 400f), 0.2f, 0.7f);
-                    cmdPoint += missile.rb.velocity * lead * 0.12f;
-                }
-            }
-            catch
-            {
-                // ignore
-            }
-
             try
             {
                 missile.SetAimpoint(cmdPoint.ToGlobalPosition(), Vector3.zero);
@@ -101,12 +85,57 @@ namespace MissileCameraRemoteControl.Control
                 // ignore
             }
 
-            ProjectReticleStable(feed, mt, worldAimPoint);
+            // Reticle follows commanded point (same as steering target) — no lead offset.
+            ProjectReticleStable(feed, mt, cmdPoint);
+        }
+
+        private static void FromDirection(Vector3 dir)
+        {
+            dir.Normalize();
+            _aimPitchDeg = Mathf.Clamp(Mathf.Asin(Mathf.Clamp(dir.y, -1f, 1f)) * Mathf.Rad2Deg, -MaxPitchDeg, MaxPitchDeg);
+            _aimYawDeg = Mathf.Atan2(dir.x, dir.z) * Mathf.Rad2Deg;
+        }
+
+        private static Vector3 ToDirection()
+        {
+            float pitch = _aimPitchDeg * Mathf.Deg2Rad;
+            float yaw = _aimYawDeg * Mathf.Deg2Rad;
+            float cp = Mathf.Cos(pitch);
+            return new Vector3(Mathf.Sin(yaw) * cp, Mathf.Sin(pitch), Mathf.Cos(yaw) * cp);
         }
 
         /// <summary>
-        /// Project aim to viewport. If behind camera, keep last on-screen position (no edge teleport).
+        /// Mouse X = yaw about world up; Mouse Y = pitch about horizontal camera-right.
+        /// Flat right never collapses at zenith/nadir the way view.up / view.right do.
         /// </summary>
+        private static void ApplyMouseCameraRelative(Transform view, float yawDeltaDeg, float pitchDeltaDeg)
+        {
+            Vector3 flatF = view.forward;
+            flatF.y = 0f;
+            if (flatF.sqrMagnitude < 1e-4f)
+            {
+                Vector3 aim = ToDirection();
+                flatF = new Vector3(aim.x, 0f, aim.z);
+                if (flatF.sqrMagnitude < 1e-4f)
+                    flatF = Vector3.forward;
+            }
+
+            flatF.Normalize();
+            Vector3 flatR = Vector3.Cross(Vector3.up, flatF);
+            if (flatR.sqrMagnitude < 1e-6f)
+                flatR = Vector3.right;
+            else
+                flatR.Normalize();
+
+            Vector3 dir = ToDirection();
+            dir = Quaternion.AngleAxis(yawDeltaDeg, Vector3.up) * dir;
+            dir = Quaternion.AngleAxis(pitchDeltaDeg, flatR) * dir;
+            if (dir.sqrMagnitude < 1e-6f)
+                return;
+
+            FromDirection(dir.normalized);
+        }
+
         private static void ProjectReticleStable(Camera? feed, Transform missile, Vector3 worldAimPoint)
         {
             if (feed != null)
@@ -116,7 +145,6 @@ namespace MissileCameraRemoteControl.Control
                 {
                     float vx = Mathf.Clamp01(vp.x);
                     float vy = Mathf.Clamp01(vp.y);
-                    // Only accept if roughly on/near screen — avoid wild NaN jumps.
                     if (!float.IsNaN(vx) && !float.IsNaN(vy) && !float.IsInfinity(vx) && !float.IsInfinity(vy))
                     {
                         _lastStableViewport = new Vector2(vx, vy);
@@ -125,7 +153,6 @@ namespace MissileCameraRemoteControl.Control
                     }
                 }
 
-                // Behind / invalid — hold last stable screen spot.
                 FsAimReticle.SetFromViewport(_lastStableViewport.x, _lastStableViewport.y, inFront: true);
                 return;
             }

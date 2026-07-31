@@ -188,6 +188,28 @@ namespace MissileCameraRemoteControl.HarmonyPatches
         }
     }
 
+    /// <summary>
+    /// Cruise seekers call SetThrottle(0.8–1) from TerrainWaypoint.
+    /// While RC is active, force the player UI throttle so MissileCamera THR stays in sync.
+    /// </summary>
+    [HarmonyPatch(typeof(Missile), nameof(Missile.SetThrottle))]
+    internal static class RcSetThrottleGuardPatch
+    {
+        private static void Prefix(Missile __instance, ref float throttle)
+        {
+            try
+            {
+                if (__instance == null || !RemoteControlSession.IsControlling(__instance))
+                    return;
+                throttle = ThrottleController.UiThrottle;
+            }
+            catch
+            {
+                // ignore
+            }
+        }
+    }
+
     /// <summary>Hangar weapon inspect: show DL / SATCOM instead of stock seeker type.</summary>
     [HarmonyPatch(typeof(AircraftSelectionMenu), nameof(AircraftSelectionMenu.DisplayInfo), new Type[] { typeof(WeaponInfo) })]
     internal static class AircraftSelectionGuidancePatch

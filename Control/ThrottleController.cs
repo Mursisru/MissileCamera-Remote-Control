@@ -5,14 +5,20 @@ using UnityEngine;
 namespace MissileCameraRemoteControl.Control
 {
     /// <summary>
-    /// Shared 0–100% throttle (RShift / RCtrl) + LShift afterburner.
-    /// Jet: boost &gt;100% thrust, fuel ×2.5. Solid: boost ×1.5 thrust, burn ×2.
+    /// Player throttle 0–1 is written to Missile.throttle every tick (MissileCamera THR gauge reads it).
+    /// Afterburner multiplies thrust only via Motor.Thrust Harmony — never inflates the gauge past 100%.
     /// </summary>
     internal static class ThrottleController
     {
+        // Hold-ramp: ThrottleStep applied this many times per second while key held.
+        private const float HoldStepsPerSec = 8f;
+
         private static float _throttle = 1f;
         private static bool _boost;
         private static RcEngineKind _engine = RcEngineKind.Jet;
+
+        /// <summary>0–1 commanded throttle shown on MissileCamera THR bar.</summary>
+        internal static float UiThrottle => _throttle;
 
         internal static void Reset()
         {
@@ -30,7 +36,7 @@ namespace MissileCameraRemoteControl.Control
             RcMissileTag? tag = missile.GetComponent<RcMissileTag>();
             _engine = tag != null ? tag.Engine : RcEngineKind.Jet;
             _throttle = 1f;
-            SafeSetThrottle(missile, 1f);
+            ApplyUiThrottle(missile);
         }
 
         internal static void Tick(Missile missile)
@@ -40,19 +46,23 @@ namespace MissileCameraRemoteControl.Control
 
             _boost = KeybindPoll.IsHeld(RcConfig.Boost.Value);
 
-            if (KeybindPoll.IsDown(RcConfig.ThrottleUp.Value))
-                _throttle = Mathf.Clamp01(_throttle + RcConfig.ThrottleStep.Value);
-            if (KeybindPoll.IsDown(RcConfig.ThrottleDown.Value))
-                _throttle = Mathf.Clamp01(_throttle - RcConfig.ThrottleStep.Value);
+            float step = Mathf.Max(0.01f, RcConfig.ThrottleStep.Value);
+            float delta = step * HoldStepsPerSec * Time.unscaledDeltaTime;
+            if (KeybindPoll.IsHeld(RcConfig.ThrottleUp.Value))
+                _throttle = Mathf.Clamp01(_throttle + delta);
+            if (KeybindPoll.IsHeld(RcConfig.ThrottleDown.Value))
+                _throttle = Mathf.Clamp01(_throttle - delta);
 
-            float t;
-            if (_engine == RcEngineKind.Jet)
-                t = _boost ? Mathf.Max(_throttle, RcConfig.JetBoostThrottle.Value) : _throttle;
-            else
-                t = _boost ? RcConfig.SolidBoostThrottle.Value : _throttle;
-
-            SafeSetThrottle(missile, t);
+            ApplyUiThrottle(missile);
             AfterburnerVfxBinder.SetBoost(missile, _boost);
+        }
+
+        /// <summary>Re-assert field after FixedUpdate seekers / physics (keeps THR gauge honest).</summary>
+        internal static void Reinforce(Missile missile)
+        {
+            if (missile == null)
+                return;
+            ApplyUiThrottle(missile);
         }
 
         internal static bool TryGetMotorOverride(Missile missile, out float effectiveThrottle, out float burnMult)
@@ -84,11 +94,12 @@ namespace MissileCameraRemoteControl.Control
             return true;
         }
 
-        private static void SafeSetThrottle(Missile missile, float throttle)
+        private static void ApplyUiThrottle(Missile missile)
         {
             try
             {
-                missile.SetThrottle(throttle);
+                // Always 0–1 so MotorAccess.Clamp01 matches player command on the FLIR THR bar.
+                missile.SetThrottle(_throttle);
             }
             catch
             {

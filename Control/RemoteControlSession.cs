@@ -123,6 +123,14 @@ namespace MissileCameraRemoteControl.Control
             ThrottleController.Tick(_controlled);
         }
 
+        /// <summary>FixedUpdate reinforce — keep Missile.throttle = UI value after physics/seeker.</summary>
+        internal static void FixedTick()
+        {
+            if (!IsActive || _controlled == null)
+                return;
+            ThrottleController.Reinforce(_controlled);
+        }
+
         private static void RefreshPool()
         {
             _pool.Clear();
