@@ -5,27 +5,30 @@ using UnityEngine;
 namespace MissileCameraRemoteControl.Control
 {
     /// <summary>
-    /// WT mouse-aim: world yaw/pitch (no gimbal at zenith/nadir).
-    /// Reticle and SetAimpoint share the same direction — no soft-lead overshoot.
+    /// WT mouse-aim: stable world-space direction (Vector3), not euler accumulation.
+    /// Reticle tracks desired aim; SetAimpoint uses the same point (vanilla Steering clamps).
     /// </summary>
     internal static class MouseGuidanceController
     {
         private const float MouseDegPerUnit = 1.25f;
         private const float MouseDeadzone = 0.02f;
-        private const float MaxPitchDeg = 89f;
-        // Match vanilla Steering Dot&lt;0.71 clamp (~45°) so command ≈ what aero accepts.
-        private const float MaxCommandAngleDeg = 45f;
+        private const float MaxPitchSin = 0.9998f; // ~sin(89°)
 
-        private static float _aimYawDeg;
-        private static float _aimPitchDeg;
+        private static Vector3 _worldAimDir = Vector3.forward;
         private static bool _initialized;
         private static Vector2 _lastStableViewport = new Vector2(0.5f, 0.5f);
+
+        /// <summary>Current aim reticle in viewport 0–1 (for target pick).</summary>
+        internal static Vector2 GetReticleViewport() => _lastStableViewport;
+
+        /// <summary>Reticle in screen pixels (CombatHUD marker space).</summary>
+        internal static Vector2 GetReticleScreenPosition() =>
+            new Vector2(_lastStableViewport.x * Screen.width, _lastStableViewport.y * Screen.height);
 
         internal static void Reset()
         {
             _initialized = false;
-            _aimYawDeg = 0f;
-            _aimPitchDeg = 0f;
+            _worldAimDir = Vector3.forward;
             _lastStableViewport = new Vector2(0.5f, 0.5f);
         }
 
@@ -44,7 +47,7 @@ namespace MissileCameraRemoteControl.Control
                 Vector3 fwd = view.forward;
                 if (fwd.sqrMagnitude < 1e-6f)
                     fwd = mt.forward;
-                FromDirection(fwd.normalized);
+                _worldAimDir = ClampPitch(fwd.normalized);
                 _initialized = true;
             }
 
@@ -56,66 +59,64 @@ namespace MissileCameraRemoteControl.Control
                 ApplyMouseCameraRelative(view, mx * sens, -my * sens);
             }
 
-            Vector3 worldAimDir = ToDirection();
-            Vector3 worldAimPoint = mt.position + worldAimDir * dist;
+            // Keep unit length — kills long-session float drift.
+            if (_worldAimDir.sqrMagnitude > 1e-8f)
+                _worldAimDir = _worldAimDir.normalized;
+            else
+                _worldAimDir = mt.forward.normalized;
 
-            Vector3 refDir = mt.forward;
+            // Soft command: blend toward desired so nose does not overshoot past the reticle.
+            // Reticle stays on full desired; SetAimpoint uses a slightly less aggressive dir.
+            Vector3 cmdDir = _worldAimDir;
             try
             {
-                if (missile.rb != null && missile.rb.velocity.sqrMagnitude > 25f)
-                    refDir = Vector3.Slerp(mt.forward, missile.rb.velocity.normalized, 0.35f).normalized;
+                Vector3 nose = mt.forward;
+                float ang = Vector3.Angle(nose, _worldAimDir);
+                if (ang > 4f)
+                    cmdDir = Vector3.Slerp(nose, _worldAimDir, 0.68f).normalized;
             }
             catch
             {
                 // ignore
             }
 
-            Vector3 cmdDir = worldAimDir;
-            float ang = Vector3.Angle(refDir, worldAimDir);
-            if (ang > MaxCommandAngleDeg)
-                cmdDir = Vector3.RotateTowards(refDir, worldAimDir, MaxCommandAngleDeg * Mathf.Deg2Rad, 0f);
-
-            Vector3 cmdPoint = mt.position + cmdDir * dist;
+            Vector3 worldAimPoint;
+            Vector3 cmdPoint;
             try
             {
-                missile.SetAimpoint(cmdPoint.ToGlobalPosition(), Vector3.zero);
+                GlobalPosition gp = missile.GlobalPosition();
+                GlobalPosition desiredGp = gp + _worldAimDir * dist;
+                GlobalPosition cmdGp = gp + cmdDir * dist;
+                worldAimPoint = desiredGp.ToLocalPosition();
+                cmdPoint = cmdGp.ToLocalPosition();
+                missile.SetAimpoint(cmdGp, Vector3.zero);
             }
             catch
             {
-                // ignore
+                worldAimPoint = mt.position + _worldAimDir * dist;
+                cmdPoint = mt.position + cmdDir * dist;
+                try
+                {
+                    missile.SetAimpoint(cmdPoint.ToGlobalPosition(), Vector3.zero);
+                }
+                catch
+                {
+                    // ignore
+                }
             }
 
-            // Reticle follows commanded point (same as steering target) — no lead offset.
-            ProjectReticleStable(feed, mt, cmdPoint);
+            // Reticle = desired (not soft cmd) so marker does not lead the nose.
+            ProjectReticleStable(feed, mt, worldAimPoint);
         }
 
-        private static void FromDirection(Vector3 dir)
-        {
-            dir.Normalize();
-            _aimPitchDeg = Mathf.Clamp(Mathf.Asin(Mathf.Clamp(dir.y, -1f, 1f)) * Mathf.Rad2Deg, -MaxPitchDeg, MaxPitchDeg);
-            _aimYawDeg = Mathf.Atan2(dir.x, dir.z) * Mathf.Rad2Deg;
-        }
-
-        private static Vector3 ToDirection()
-        {
-            float pitch = _aimPitchDeg * Mathf.Deg2Rad;
-            float yaw = _aimYawDeg * Mathf.Deg2Rad;
-            float cp = Mathf.Cos(pitch);
-            return new Vector3(Mathf.Sin(yaw) * cp, Mathf.Sin(pitch), Mathf.Cos(yaw) * cp);
-        }
-
-        /// <summary>
-        /// Mouse X = yaw about world up; Mouse Y = pitch about horizontal camera-right.
-        /// Flat right never collapses at zenith/nadir the way view.up / view.right do.
-        /// </summary>
         private static void ApplyMouseCameraRelative(Transform view, float yawDeltaDeg, float pitchDeltaDeg)
         {
+            // Yaw about world up; pitch about horizontal camera-right (stable at poles).
             Vector3 flatF = view.forward;
             flatF.y = 0f;
             if (flatF.sqrMagnitude < 1e-4f)
             {
-                Vector3 aim = ToDirection();
-                flatF = new Vector3(aim.x, 0f, aim.z);
+                flatF = new Vector3(_worldAimDir.x, 0f, _worldAimDir.z);
                 if (flatF.sqrMagnitude < 1e-4f)
                     flatF = Vector3.forward;
             }
@@ -127,13 +128,30 @@ namespace MissileCameraRemoteControl.Control
             else
                 flatR.Normalize();
 
-            Vector3 dir = ToDirection();
+            Vector3 dir = _worldAimDir;
             dir = Quaternion.AngleAxis(yawDeltaDeg, Vector3.up) * dir;
             dir = Quaternion.AngleAxis(pitchDeltaDeg, flatR) * dir;
             if (dir.sqrMagnitude < 1e-6f)
                 return;
 
-            FromDirection(dir.normalized);
+            _worldAimDir = ClampPitch(dir.normalized);
+        }
+
+        private static Vector3 ClampPitch(Vector3 dir)
+        {
+            dir.Normalize();
+            if (dir.y > MaxPitchSin || dir.y < -MaxPitchSin)
+            {
+                Vector3 flat = new Vector3(dir.x, 0f, dir.z);
+                if (flat.sqrMagnitude < 1e-8f)
+                    flat = Vector3.forward;
+                flat.Normalize();
+                float y = Mathf.Sign(dir.y) * MaxPitchSin;
+                float horiz = Mathf.Sqrt(Mathf.Max(0f, 1f - y * y));
+                dir = flat * horiz + Vector3.up * y;
+            }
+
+            return dir.normalized;
         }
 
         private static void ProjectReticleStable(Camera? feed, Transform missile, Vector3 worldAimPoint)

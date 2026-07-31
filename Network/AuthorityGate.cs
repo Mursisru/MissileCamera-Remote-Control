@@ -25,6 +25,8 @@ namespace MissileCameraRemoteControl.Network
         {
             if (missile == null || missile.disabled)
                 return false;
+            if (!RcServerCompat.FeaturesAllowed)
+                return false;
             if (!ServerActive)
                 return false;
             try

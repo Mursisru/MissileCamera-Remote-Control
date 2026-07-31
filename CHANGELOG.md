@@ -12,10 +12,10 @@ All notable changes to **MissileCamera: Remote Control** are documented in this 
 - Encyclopedia missile definition entries for RC variants.
 - Launch path stamps RC identity onto stock Mirage-registered missile prefabs.
 - Warhead safety while RC is active (fins / tangible / arm / proxy fuse).
+- P2 datalink quality for DL clones (mesh range / LoS degrade / jam break); SATCOM ignores terrain and jam.
+- P3 FS missile picker (`L`) and hostâ†’client afterburner VFX sync.
+- MP server presence handshake: disable RC on clients when the server lacks this addon.
 
 ### Changed
 
-- RC weapon display names remapped (AGM-98D, ALM-D500, …); HE only on Tusko / conventional Piledriver; 20kt on nuclear.
-- Throttle binds renamed; pylon mesh SpawnMount fix; RC self-destruct gate; THR gauge snap.
-
-- Default keybinds: `T` take/release RC, Left Shift afterburner, Right Shift / Right Ctrl throttle; mouse aim only. Cycle, choke, retarget, and airburst binds removed.
+- Default keybinds: `T` take/release RC, `L` missile list, Left Shift afterburner, Right Shift / Right Ctrl throttle; mouse aim only. Cycle, choke, retarget, and airburst binds removed.

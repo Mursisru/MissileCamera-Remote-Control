@@ -41,6 +41,7 @@ namespace MissileCameraRemoteControl.Control
                 PatchAllSeekerOverrides(_harmony);
                 PatchMotorThrust(_harmony);
                 HarmonyPatches.RcMissileCameraThrSnap.TryPatch(_harmony, _log);
+                HarmonyPatches.RcSteeringUprightPatch.TryPatch(_harmony, _log);
                 _log?.LogInfo("Harmony patched.");
             }
             catch (Exception ex)
@@ -52,6 +53,7 @@ namespace MissileCameraRemoteControl.Control
             SceneManager.sceneUnloaded += OnSceneUnloaded;
             _nextBootstrapAttempt = 0f;
             TryBootstrapClones("plugin_awake");
+            Network.RcBoostStateSync.EnsureRegistered();
         }
 
         private void PatchMotorThrust(Harmony harmony)
@@ -130,6 +132,9 @@ namespace MissileCameraRemoteControl.Control
             LaunchRcCapture.Clear();
             AfterburnerVfxBinder.ClearCache();
             FsAimReticle.DestroyUi();
+            RcMissilePickerUi.DestroyUi();
+            Network.RcBoostStateSync.Reset();
+            Network.RcServerCompat.Reset();
             _log?.LogInfo($"RC hard reset ({reason}).");
         }
 
@@ -181,8 +186,18 @@ namespace MissileCameraRemoteControl.Control
 
             try
             {
+                Network.RcServerCompat.Tick();
+                Network.RcBoostStateSync.EnsureRegistered();
+
                 GameState state = GameManager.gameState;
                 if (state != GameState.SinglePlayer && state != GameState.Multiplayer)
+                {
+                    if (RemoteControlSession.Controlled != null)
+                        RemoteControlSession.Clear();
+                    return;
+                }
+
+                if (!Network.RcServerCompat.FeaturesAllowed)
                 {
                     if (RemoteControlSession.Controlled != null)
                         RemoteControlSession.Clear();
@@ -200,6 +215,8 @@ namespace MissileCameraRemoteControl.Control
         private void FixedUpdate()
         {
             if (!RcConfig.Enabled.Value)
+                return;
+            if (!Network.RcServerCompat.FeaturesAllowed)
                 return;
             try
             {

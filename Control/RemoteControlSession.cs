@@ -15,6 +15,8 @@ namespace MissileCameraRemoteControl.Control
 
         internal static Missile? Controlled => _controlled;
 
+        internal static IReadOnlyList<Missile> Pool => _pool;
+
         internal static bool IsActive =>
             _controlled != null
             && !_controlled.disabled
@@ -28,16 +30,20 @@ namespace MissileCameraRemoteControl.Control
 
         internal static void Clear()
         {
-            Release(silent: true);
+            Release(silent: true, restoreTargets: true);
             _pool.Clear();
             FsAimReticle.DestroyUi();
+            RcMissilePickerUi.DestroyUi();
         }
 
-        internal static void Release(bool silent = false)
+        internal static void Release(bool silent = false, bool restoreTargets = true)
         {
             if (_controlled != null)
             {
+                RcSeekerHandoff.CommitForAutonomous(_controlled);
                 AfterburnerVfxBinder.SetBoost(_controlled, false);
+                RcBoostStateSync.Publish(_controlled, false);
+                RcUprightAssist.OnRelease(_controlled);
                 if (!silent)
                     RcPlugin.ModLogger?.LogInfo($"RC released: {_controlled.name}");
             }
@@ -45,6 +51,12 @@ namespace MissileCameraRemoteControl.Control
             FsAimReticle.SetVisible(false);
             MouseGuidanceController.Reset();
             ThrottleController.Reset();
+            RcLinkQuality.Reset();
+            RcUprightAssist.ResetSaved();
+            if (restoreTargets)
+                RcAircraftTargetSnapshot.Restore();
+            else
+                RcAircraftTargetSnapshot.Clear();
         }
 
         internal static void ToggleNearest()
@@ -81,12 +93,17 @@ namespace MissileCameraRemoteControl.Control
             if (!MissileAccess.IsRcMissile(missile))
                 return;
 
-            Release(silent: true);
+            RcMissilePickerUi.Close();
+            Release(silent: true, restoreTargets: false);
             _controlled = missile;
             MouseGuidanceController.Reset();
+            RcLinkQuality.Reset();
             FsAimReticle.SetVisible(true);
+            RcAircraftTargetSnapshot.Capture();
             ThrottleController.OnTakeControl(missile);
+            RcUprightAssist.OnTakeControl(missile);
             RcWarheadSafety.Tick(missile);
+            RcLinkQuality.Evaluate(missile);
             RcPlugin.ModLogger?.LogInfo($"RC engaged (FS): {missile.name}");
         }
 
@@ -99,9 +116,9 @@ namespace MissileCameraRemoteControl.Control
                 return;
             }
 
-            // Drop RC when leaving MissileCamera fullscreen.
             if (_controlled != null && !MissileCameraFsAccess.IsFullscreenActive)
             {
+                RcMissilePickerUi.Close();
                 Release();
                 return;
             }
@@ -112,18 +129,31 @@ namespace MissileCameraRemoteControl.Control
                 return;
             }
 
-            if (KeybindPoll.IsDown(RcConfig.ToggleControl.Value))
+            if (KeybindPoll.IsDown(RcConfig.OpenMissileList.Value))
+                RcMissilePickerUi.Toggle();
+
+            RcMissilePickerUi.Tick();
+
+            if (KeybindPoll.IsDown(RcConfig.ToggleControl.Value) && !RcMissilePickerUi.IsOpen)
                 ToggleNearest();
 
             if (!IsActive || _controlled == null)
                 return;
 
+            RcLinkLevel link = RcLinkQuality.Evaluate(_controlled);
+            if (link == RcLinkLevel.Lost)
+            {
+                RcPlugin.ModLogger?.LogInfo("RC link lost — releasing to autonomous seeker.");
+                Release();
+                return;
+            }
+
             RcWarheadSafety.Tick(_controlled);
+            RcRetargetController.Tick(_controlled);
             MouseGuidanceController.Tick(_controlled);
             ThrottleController.Tick(_controlled);
         }
 
-        /// <summary>FixedUpdate reinforce — keep Missile.throttle = UI value after physics/seeker.</summary>
         internal static void FixedTick()
         {
             if (!IsActive || _controlled == null)
@@ -131,12 +161,12 @@ namespace MissileCameraRemoteControl.Control
             ThrottleController.Reinforce(_controlled);
         }
 
-        private static void RefreshPool()
+        internal static void RefreshPool()
         {
             _pool.Clear();
             try
             {
-                Missile[] all = UnityEngine.Object.FindObjectsOfType<Missile>();
+                Missile[] all = Object.FindObjectsOfType<Missile>();
                 for (int i = 0; i < all.Length; i++)
                 {
                     Missile m = all[i];
@@ -196,6 +226,23 @@ namespace MissileCameraRemoteControl.Control
             }
 
             return best;
+        }
+
+        internal static Vector3 GetPoolOrigin()
+        {
+            try
+            {
+                if (GameManager.GetLocalAircraft(out Aircraft ac) && ac != null)
+                    return ac.transform.position;
+            }
+            catch
+            {
+                // ignore
+            }
+
+            if (Camera.main != null)
+                return Camera.main.transform.position;
+            return Vector3.zero;
         }
     }
 }

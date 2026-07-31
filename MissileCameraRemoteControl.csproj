@@ -25,6 +25,10 @@
       <HintPath>$(NuclearOptionRoot)\NuclearOption_Data\Managed\Mirage.dll</HintPath>
       <Private>false</Private>
     </Reference>
+    <Reference Include="Mirage.SocketLayer">
+      <HintPath>$(NuclearOptionRoot)\NuclearOption_Data\Managed\Mirage.SocketLayer.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
     <Reference Include="UnityEngine">
       <HintPath>$(NuclearOptionRoot)\NuclearOption_Data\Managed\UnityEngine.dll</HintPath>
       <Private>false</Private>
@@ -51,6 +55,10 @@
     </Reference>
     <Reference Include="UnityEngine.UIModule">
       <HintPath>$(NuclearOptionRoot)\NuclearOption_Data\Managed\UnityEngine.UIModule.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="UnityEngine.TextRenderingModule">
+      <HintPath>$(NuclearOptionRoot)\NuclearOption_Data\Managed\UnityEngine.TextRenderingModule.dll</HintPath>
       <Private>false</Private>
     </Reference>
     <Reference Include="Unity.TextMeshPro">

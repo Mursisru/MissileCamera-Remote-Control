@@ -20,18 +20,25 @@ BepInEx 5 addon for **Nuclear Option** that extends [MissileCamera](https://gith
 > [!WARNING]
 > Remote control is **host / single-player only** (`LocalSim`). Pure clients cannot steer missiles.
 
+> [!IMPORTANT]
+> In multiplayer, if the **server does not run this addon**, Remote Control features are **temporarily disabled** on your client for that session (auto re-enabled when you leave). Hosts / servers with the addon stay enabled.
+
 > [!NOTE]
 > Vanilla mounts are never mutated. Clones are separate loadout options injected only onto hardpoints that already allow the original weapon.
 
 ---
 
-## Features (P0–P1)
+## Features
 
-- Selective RC clones with unique designations (no `[DL]` / `[SATCOM]` name prefixes; guidance still shown as DL/SATCOM in UI)
+- Selective RC clones with unique designations (guidance shown as DL/SATCOM in UI)
 - Hardpoint-compatible loadout injection
 - Manual mouse aim via vanilla `SetAimpoint` (stock aero / Over-G retained)
 - Jet / solid throttle, afterburner, afterburner VFX reuse
 - Encyclopedia missile entries for RC variants
+- **P2 datalink:** DL mesh 150 km + LoS (weak without LoS; drop if out of range or jammed &gt;5 s); SATCOM always full link
+- **P3 picker:** `L` opens allied RC missile list in MissileCamera Fullscreen
+- **P3 boost sync:** host broadcasts afterburner state to clients in mod lobbies
+- **MP presence:** clients query the server for this addon; no reply → RC disabled for that session only
 
 ---
 
@@ -56,6 +63,7 @@ BepInEx 5 addon for **Nuclear Option** that extends [MissileCamera](https://gith
 | Action | Default |
 |--------|---------|
 | Take / release RC | `T` |
+| Open RC missile list | `L` |
 | Afterburner (hold) | Left Shift |
 | Throttle up | Right Shift |
 | Throttle down | Right Ctrl |

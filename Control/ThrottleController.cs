@@ -1,5 +1,6 @@
 using System.Reflection;
 using MissileCameraRemoteControl.Config;
+using MissileCameraRemoteControl.Network;
 using MissileCameraRemoteControl.Vfx;
 using UnityEngine;
 
@@ -8,10 +9,10 @@ namespace MissileCameraRemoteControl.Control
     /// <summary>
     /// Player throttle 0–1 → Missile.throttle (MissileCamera THR gauge).
     /// Afterburner multiplies Motor.Thrust only (does not inflate the gauge).
+    /// Degraded link: throttle locked at 1, boost blocked.
     /// </summary>
     internal static class ThrottleController
     {
-        // Full 0→100% in ~0.35s while held — no sluggish crawl.
         private const float RampPerSec = 2.85f;
         private const float TapStep = 0.1f;
 
@@ -23,8 +24,8 @@ namespace MissileCameraRemoteControl.Control
         private static bool _boost;
         private static RcEngineKind _engine = RcEngineKind.Jet;
 
-        /// <summary>0–1 commanded throttle shown on MissileCamera THR bar.</summary>
         internal static float UiThrottle => _throttle;
+        internal static bool BoostActive => _boost;
 
         internal static void Reset()
         {
@@ -43,6 +44,7 @@ namespace MissileCameraRemoteControl.Control
             _engine = tag != null ? tag.Engine : RcEngineKind.Jet;
             _throttle = 1f;
             ApplyUiThrottle(missile);
+            RcBoostStateSync.Publish(missile, false);
         }
 
         internal static void Tick(Missile missile)
@@ -50,9 +52,19 @@ namespace MissileCameraRemoteControl.Control
             if (missile == null)
                 return;
 
+            RcLinkLevel link = RcLinkQuality.Current;
+            if (link == RcLinkLevel.Degraded || link == RcLinkLevel.Lost)
+            {
+                _throttle = 1f;
+                _boost = false;
+                ApplyUiThrottle(missile);
+                AfterburnerVfxBinder.SetBoost(missile, false);
+                RcBoostStateSync.Publish(missile, false);
+                return;
+            }
+
             _boost = KeybindPoll.IsHeld(RcConfig.Boost.Value);
 
-            // Tap = coarse notch; hold = fast linear ramp (stops instantly on release).
             if (KeybindPoll.IsDown(RcConfig.ThrottleUp.Value))
                 _throttle = Mathf.Clamp01(_throttle + TapStep);
             else if (KeybindPoll.IsHeld(RcConfig.ThrottleUp.Value))
@@ -65,12 +77,15 @@ namespace MissileCameraRemoteControl.Control
 
             ApplyUiThrottle(missile);
             AfterburnerVfxBinder.SetBoost(missile, _boost);
+            RcBoostStateSync.Publish(missile, _boost);
         }
 
         internal static void Reinforce(Missile missile)
         {
             if (missile == null)
                 return;
+            if (RcLinkQuality.Current == RcLinkLevel.Degraded || RcLinkQuality.Current == RcLinkLevel.Lost)
+                _throttle = 1f;
             ApplyUiThrottle(missile);
         }
 
@@ -81,6 +96,14 @@ namespace MissileCameraRemoteControl.Control
 
             if (!RemoteControlSession.IsControlling(missile))
                 return false;
+
+            RcLinkLevel link = RcLinkQuality.Current;
+            if (link == RcLinkLevel.Degraded || link == RcLinkLevel.Lost)
+            {
+                effectiveThrottle = 1f;
+                burnMult = 1f;
+                return true;
+            }
 
             if (_engine == RcEngineKind.Jet)
             {
