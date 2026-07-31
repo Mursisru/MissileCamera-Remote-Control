@@ -1,0 +1,17 @@
+bin/
+obj/
+.vs/
+.debug/
+*.user
+*.suo
+*.userosscache
+*.sln.docstates
+Directory.Build.props
+Directory.Build.user.props
+.cursorrules
+.cursor/
+*.log
+*.tmp
+Thumbs.db
+Desktop.ini
+_tmp_*
