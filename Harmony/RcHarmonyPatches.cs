@@ -119,6 +119,11 @@ namespace MissileCameraRemoteControl.HarmonyPatches
             tag.BackupSeekerType = seeker != null ? seeker.GetSeekerType() : string.Empty;
             if (string.IsNullOrEmpty(tag.BackupSeekerType) && seeker != null)
                 tag.BackupSeekerType = seeker.GetType().Name;
+
+            LaunchRcCapture.TryApplyNameFromMissileInfo(missile);
+            if (!string.IsNullOrEmpty(name)
+                && (CloneProfile.IsRcDisplayName(name) || CloneProfile.TryGetGuidanceFromRcName(name, out _)))
+                LaunchRcCapture.ApplyDisplayName(missile, name);
         }
     }
 
