@@ -176,7 +176,8 @@ namespace MissileCameraRemoteControl.Control
                 return;
 
             AssignMissileTarget(missile, best);
-            RcSeekerHandoff.CommitForAutonomous(missile);
+            // Prepare seeker state only — do NOT SetAimpoint while RC owns stick (that stole aim near target).
+            RcSeekerHandoff.PrepareSeekerState(missile);
             RcPlugin.ModLogger?.LogInfo($"RC retarget → {best.unitName ?? best.name}");
         }
 

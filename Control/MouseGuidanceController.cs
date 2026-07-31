@@ -5,23 +5,21 @@ using UnityEngine;
 namespace MissileCameraRemoteControl.Control
 {
     /// <summary>
-    /// WT mouse-aim: stable world-space direction (Vector3), not euler accumulation.
-    /// Reticle tracks desired aim; SetAimpoint uses the same point (vanilla Steering clamps).
+    /// WT mouse-aim: SetAimpoint in Update + reinforce in Steering prefix (after Seek).
+    /// Direct cmd (no soft Slerp) so terminal/leaked Seek cannot hold the nose.
     /// </summary>
     internal static class MouseGuidanceController
     {
         private const float MouseDegPerUnit = 1.25f;
         private const float MouseDeadzone = 0.02f;
-        private const float MaxPitchSin = 0.9998f; // ~sin(89°)
+        private const float MaxPitchSin = 0.9998f;
 
         private static Vector3 _worldAimDir = Vector3.forward;
         private static bool _initialized;
         private static Vector2 _lastStableViewport = new Vector2(0.5f, 0.5f);
 
-        /// <summary>Current aim reticle in viewport 0–1 (for target pick).</summary>
         internal static Vector2 GetReticleViewport() => _lastStableViewport;
 
-        /// <summary>Reticle in screen pixels (CombatHUD marker space).</summary>
         internal static Vector2 GetReticleScreenPosition() =>
             new Vector2(_lastStableViewport.x * Screen.width, _lastStableViewport.y * Screen.height);
 
@@ -59,59 +57,54 @@ namespace MissileCameraRemoteControl.Control
                 ApplyMouseCameraRelative(view, mx * sens, -my * sens);
             }
 
-            // Keep unit length — kills long-session float drift.
             if (_worldAimDir.sqrMagnitude > 1e-8f)
                 _worldAimDir = _worldAimDir.normalized;
             else
                 _worldAimDir = mt.forward.normalized;
 
-            // Soft command: blend toward desired so nose does not overshoot past the reticle.
-            // Reticle stays on full desired; SetAimpoint uses a slightly less aggressive dir.
-            Vector3 cmdDir = _worldAimDir;
-            try
-            {
-                Vector3 nose = mt.forward;
-                float ang = Vector3.Angle(nose, _worldAimDir);
-                if (ang > 4f)
-                    cmdDir = Vector3.Slerp(nose, _worldAimDir, 0.68f).normalized;
-            }
-            catch
-            {
-                // ignore
-            }
+            Vector3 worldAimPoint = WriteAimpoint(missile, dist, mt);
+            ProjectReticleStable(feed, mt, worldAimPoint);
+        }
 
-            Vector3 worldAimPoint;
-            Vector3 cmdPoint;
+        /// <summary>
+        /// Called from Steering Prefix — same FixedUpdate as Seek, after Seek.
+        /// Overwrites any leaked terminal SetAimpoint before Steering reads aimPoint.
+        /// </summary>
+        internal static void ReinforceAimpoint(Missile missile)
+        {
+            if (missile == null || missile.disabled || !_initialized)
+                return;
+            float dist = Mathf.Max(200f, RcConfig.AimDistance.Value);
+            WriteAimpoint(missile, dist, missile.transform);
+        }
+
+        private static Vector3 WriteAimpoint(Missile missile, float dist, Transform mt)
+        {
             try
             {
                 GlobalPosition gp = missile.GlobalPosition();
-                GlobalPosition desiredGp = gp + _worldAimDir * dist;
-                GlobalPosition cmdGp = gp + cmdDir * dist;
-                worldAimPoint = desiredGp.ToLocalPosition();
-                cmdPoint = cmdGp.ToLocalPosition();
-                missile.SetAimpoint(cmdGp, Vector3.zero);
+                GlobalPosition aimGp = gp + _worldAimDir * dist;
+                missile.SetAimpoint(aimGp, Vector3.zero);
+                return aimGp.ToLocalPosition();
             }
             catch
             {
-                worldAimPoint = mt.position + _worldAimDir * dist;
-                cmdPoint = mt.position + cmdDir * dist;
+                Vector3 local = mt.position + _worldAimDir * dist;
                 try
                 {
-                    missile.SetAimpoint(cmdPoint.ToGlobalPosition(), Vector3.zero);
+                    missile.SetAimpoint(local.ToGlobalPosition(), Vector3.zero);
                 }
                 catch
                 {
                     // ignore
                 }
-            }
 
-            // Reticle = desired (not soft cmd) so marker does not lead the nose.
-            ProjectReticleStable(feed, mt, worldAimPoint);
+                return local;
+            }
         }
 
         private static void ApplyMouseCameraRelative(Transform view, float yawDeltaDeg, float pitchDeltaDeg)
         {
-            // Yaw about world up; pitch about horizontal camera-right (stable at poles).
             Vector3 flatF = view.forward;
             flatF.y = 0f;
             if (flatF.sqrMagnitude < 1e-4f)

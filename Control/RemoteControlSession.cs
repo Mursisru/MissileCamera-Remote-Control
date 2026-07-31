@@ -28,6 +28,12 @@ namespace MissileCameraRemoteControl.Control
             return missile != null && ReferenceEquals(missile, _controlled) && IsActive;
         }
 
+        /// <summary>Session ownership — Seek skip / aim reinforce even if FS flickers for a frame.</summary>
+        internal static bool OwnsMissile(Missile? missile)
+        {
+            return missile != null && ReferenceEquals(missile, _controlled) && !_controlled.disabled;
+        }
+
         internal static void Clear()
         {
             Release(silent: true, restoreTargets: true);
@@ -102,6 +108,7 @@ namespace MissileCameraRemoteControl.Control
             RcAircraftTargetSnapshot.Capture();
             ThrottleController.OnTakeControl(missile);
             RcUprightAssist.OnTakeControl(missile);
+            RcSeekerSuppress.Tick(missile);
             RcWarheadSafety.Tick(missile);
             RcLinkQuality.Evaluate(missile);
             RcPlugin.ModLogger?.LogInfo($"RC engaged (FS): {missile.name}");
@@ -140,14 +147,10 @@ namespace MissileCameraRemoteControl.Control
             if (!IsActive || _controlled == null)
                 return;
 
-            RcLinkLevel link = RcLinkQuality.Evaluate(_controlled);
-            if (link == RcLinkLevel.Lost)
-            {
-                RcPlugin.ModLogger?.LogInfo("RC link lost — releasing to autonomous seeker.");
-                Release();
-                return;
-            }
+            // Lost: keep stick (thr like Degraded). Auto-Release handed aim to Seek near jam/targets.
+            RcLinkQuality.Evaluate(_controlled);
 
+            RcSeekerSuppress.Tick(_controlled);
             RcWarheadSafety.Tick(_controlled);
             RcRetargetController.Tick(_controlled);
             MouseGuidanceController.Tick(_controlled);

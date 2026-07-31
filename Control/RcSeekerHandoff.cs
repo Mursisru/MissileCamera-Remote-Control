@@ -43,8 +43,22 @@ namespace MissileCameraRemoteControl.Control
         private static readonly FieldInfo? BallisticKnownVel =
             typeof(BallisticMissileGuidance).GetField("knownVel", BindingFlags.Instance | BindingFlags.NonPublic);
 
-        /// <summary>Call on RC release (and after Assign) so Seek resumes toward current lock.</summary>
+        /// <summary>
+        /// While still under RC: sync seeker mid-course fields for later release.
+        /// Never writes SetAimpoint (mouse owns aim).
+        /// </summary>
+        internal static void PrepareSeekerState(Missile missile)
+        {
+            ApplyInternal(missile, writeAimpoint: false, log: false);
+        }
+
+        /// <summary>On RC release: sync seeker + SetAimpoint so Seek resumes toward lock.</summary>
         internal static void CommitForAutonomous(Missile missile)
+        {
+            ApplyInternal(missile, writeAimpoint: true, log: true);
+        }
+
+        private static void ApplyInternal(Missile missile, bool writeAimpoint, bool log)
         {
             if (missile == null || missile.disabled)
                 return;
@@ -64,10 +78,7 @@ namespace MissileCameraRemoteControl.Control
             }
 
             if (unit == null || unit.disabled)
-            {
-                // Keep current aimpoint as last RC stick direction — already set by MouseGuidance.
                 return;
-            }
 
             GlobalPosition known = ResolveKnownPosition(missile, unit);
             Vector3 knownVel = Vector3.zero;
@@ -84,15 +95,16 @@ namespace MissileCameraRemoteControl.Control
             try
             {
                 if (seeker is OpticalSeekerCruiseMissile cruise)
-                    ApplyCruise(missile, cruise, unit, known, knownVel);
+                    ApplyCruise(missile, cruise, unit, known, knownVel, writeAimpoint);
                 else if (seeker is BallisticMissileGuidance ballistic)
-                    ApplyBallistic(missile, ballistic, known, knownVel);
-                else
+                    ApplyBallistic(missile, ballistic, known, knownVel, writeAimpoint);
+                else if (writeAimpoint)
                     ApplyGeneric(missile, known, knownVel);
             }
             catch
             {
-                ApplyGeneric(missile, known, knownVel);
+                if (writeAimpoint)
+                    ApplyGeneric(missile, known, knownVel);
             }
 
             try
@@ -109,8 +121,11 @@ namespace MissileCameraRemoteControl.Control
                 // ignore
             }
 
-            RcPlugin.ModLogger?.LogInfo(
-                $"RC handoff → autonomous toward {unit.unitName ?? unit.name}");
+            if (log)
+            {
+                RcPlugin.ModLogger?.LogInfo(
+                    $"RC handoff → autonomous toward {unit.unitName ?? unit.name}");
+            }
         }
 
         private static void ApplyCruise(
@@ -118,13 +133,16 @@ namespace MissileCameraRemoteControl.Control
             OpticalSeekerCruiseMissile cruise,
             Unit unit,
             GlobalPosition known,
-            Vector3 knownVel)
+            Vector3 knownVel,
+            bool writeAimpoint)
         {
             CruiseKnownPos?.SetValue(cruise, known);
             CruiseAimPos?.SetValue(cruise, known);
             CruiseKnownVel?.SetValue(cruise, knownVel);
             CruiseTerminal?.SetValue(cruise, false);
-            CruiseGuidance?.SetValue(cruise, true);
+            // Under RC (prepare): guidance stays false so leaked Seek cannot PreTerminal/Terminal.
+            // On release commit: guidance true so autonomous Seek resumes.
+            CruiseGuidance?.SetValue(cruise, writeAimpoint);
             CruiseTargetPart?.SetValue(cruise, null);
             try
             {
@@ -135,18 +153,21 @@ namespace MissileCameraRemoteControl.Control
                 // ignore
             }
 
-            missile.SetAimpoint(known, knownVel);
+            if (writeAimpoint)
+                missile.SetAimpoint(known, knownVel);
         }
 
         private static void ApplyBallistic(
             Missile missile,
             BallisticMissileGuidance ballistic,
             GlobalPosition known,
-            Vector3 knownVel)
+            Vector3 knownVel,
+            bool writeAimpoint)
         {
             BallisticKnownPos?.SetValue(ballistic, known);
             BallisticKnownVel?.SetValue(ballistic, knownVel);
-            missile.SetAimpoint(known, knownVel);
+            if (writeAimpoint)
+                missile.SetAimpoint(known, knownVel);
         }
 
         private static void ApplyGeneric(Missile missile, GlobalPosition known, Vector3 knownVel)

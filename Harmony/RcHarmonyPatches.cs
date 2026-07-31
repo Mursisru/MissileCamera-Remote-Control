@@ -130,16 +130,35 @@ namespace MissileCameraRemoteControl.HarmonyPatches
     [HarmonyPatch(typeof(MissileSeeker), nameof(MissileSeeker.Seek))]
     internal static class RcSeekPatch
     {
+        private static readonly System.Reflection.FieldInfo? SeekerMissileField =
+            typeof(MissileSeeker).GetField("missile", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Public);
+
         public static bool Prefix(MissileSeeker __instance)
         {
             try
             {
                 if (__instance == null)
                     return true;
-                Missile? missile = __instance.GetComponent<Missile>();
+
+                Missile? missile = null;
+                try
+                {
+                    if (SeekerMissileField != null)
+                        missile = SeekerMissileField.GetValue(__instance) as Missile;
+                }
+                catch
+                {
+                    missile = null;
+                }
+
+                if (missile == null)
+                    missile = __instance.GetComponent<Missile>();
                 if (missile == null)
                     return true;
-                if (RemoteControlSession.IsControlling(missile))
+
+                // GitHub + harden: skip Seek for entire RC ownership (not only IsControlling/FS).
+                // Inside terminalRange cruise Seek enters TerminalMode and steals SetAimpoint every FixedUpdate.
+                if (RemoteControlSession.OwnsMissile(missile))
                     return false;
             }
             catch

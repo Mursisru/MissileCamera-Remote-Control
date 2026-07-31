@@ -19,3 +19,8 @@ All notable changes to **MissileCamera: Remote Control** are documented in this 
 ### Changed
 
 - Default keybinds: `T` take/release RC, `L` missile list, Left Shift afterburner, Right Shift / Right Ctrl throttle; mouse aim only. Cycle, choke, retarget, and airburst binds removed.
+- Upright preference boost / roll assist under RC disabled (stock Steering only).
+
+### Fixed
+
+- Terminal seeker takeover near target (~`terminalRange`): Seek skip uses session ownership; cruise `guidance`/`terminalMode` suppressed while RC; mouse `SetAimpoint` reinforced before Steering; Select prepare no longer enables autonomous guidance until Release.
