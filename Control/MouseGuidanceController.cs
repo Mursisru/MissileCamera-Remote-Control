@@ -5,24 +5,25 @@ using UnityEngine;
 namespace MissileCameraRemoteControl.Control
 {
     /// <summary>
-    /// War Thunder mouse-aim: world-fixed aim point.
-    /// Mouse rotates the aim in camera space; reticle is a projection of that point
-    /// (so missile/camera turn moves the circle toward center — mouse does not fight the camera).
-    /// Soft lead + nose-angle clamp keep commands inside vanilla gLimit / Steering.
+    /// WT mouse-aim with a stable world-space DIRECTION (not a fixed world point).
+    /// Fixed world points teleport the reticle when the missile flies past / aim goes behind the feed cam.
     /// </summary>
     internal static class MouseGuidanceController
     {
-        private const float DefaultMouseDeg = 1.6f;
-        private const float SoftLeadSeconds = 0.35f;
-        private const float MaxCommandAngleDeg = 55f;
+        private const float MouseDegPerUnit = 1.25f;
+        private const float MouseDeadzone = 0.02f;
+        private const float SoftLeadSeconds = 0.3f;
+        private const float MaxCommandAngleDeg = 50f;
 
-        private static Vector3 _worldAimLocal; // Datum-local / Unity world (same as transform.position space)
+        private static Vector3 _worldAimDir = Vector3.forward;
         private static bool _initialized;
+        private static Vector2 _lastStableViewport = new Vector2(0.5f, 0.5f);
 
         internal static void Reset()
         {
             _initialized = false;
-            _worldAimLocal = Vector3.zero;
+            _worldAimDir = Vector3.forward;
+            _lastStableViewport = new Vector2(0.5f, 0.5f);
         }
 
         internal static void Tick(Missile missile)
@@ -33,39 +34,32 @@ namespace MissileCameraRemoteControl.Control
             float dist = Mathf.Max(200f, RcConfig.AimDistance.Value);
             Transform mt = missile.transform;
             Camera? feed = MissileCameraFsAccess.TryGetFeedCamera();
+            Transform view = feed != null ? feed.transform : mt;
 
             if (!_initialized)
             {
-                Vector3 fwd = feed != null ? feed.transform.forward : mt.forward;
-                Vector3 origin = feed != null ? feed.transform.position : mt.position;
-                _worldAimLocal = origin + fwd.normalized * dist;
+                Vector3 fwd = view.forward;
+                if (fwd.sqrMagnitude < 1e-6f)
+                    fwd = mt.forward;
+                _worldAimDir = fwd.normalized;
                 _initialized = true;
             }
 
-            // Mouse rotates world aim around the view (not a sticky screen offset).
+            // Mouse only — deadzone kills stick noise / tiny axis jitter.
             float mx = Input.GetAxisRaw("Mouse X");
             float my = Input.GetAxisRaw("Mouse Y");
-            float sens = Mathf.Max(0.02f, RcConfig.MouseSensitivity.Value) * DefaultMouseDeg;
-            if (Mathf.Abs(mx) > 0.0001f || Mathf.Abs(my) > 0.0001f)
+            if (mx * mx + my * my >= MouseDeadzone * MouseDeadzone)
             {
-                Transform view = feed != null ? feed.transform : mt;
-                Vector3 from = view.position;
-                Vector3 toAim = _worldAimLocal - from;
-                float range = Mathf.Max(dist * 0.25f, toAim.magnitude);
-                Vector3 dir = toAim.sqrMagnitude > 1e-4f ? toAim.normalized : view.forward;
-
+                float sens = Mathf.Max(0.02f, RcConfig.MouseSensitivity.Value) * MouseDegPerUnit;
                 Quaternion yaw = Quaternion.AngleAxis(mx * sens, view.up);
                 Quaternion pitch = Quaternion.AngleAxis(-my * sens, view.right);
-                dir = (yaw * pitch * dir).normalized;
-                _worldAimLocal = from + dir * range;
+                Vector3 rotated = yaw * pitch * _worldAimDir;
+                if (rotated.sqrMagnitude > 1e-6f)
+                    _worldAimDir = rotated.normalized;
             }
 
-            // Command aimpoint: clamp off-nose angle so Steering/gLimit are not permanently saturated.
-            Vector3 desiredDir = (_worldAimLocal - mt.position);
-            if (desiredDir.sqrMagnitude < 1e-4f)
-                desiredDir = mt.forward;
-            else
-                desiredDir.Normalize();
+            // Aim point rides with the missile along the fixed world direction (never "flies past").
+            Vector3 worldAimPoint = mt.position + _worldAimDir * dist;
 
             Vector3 refDir = mt.forward;
             try
@@ -78,28 +72,20 @@ namespace MissileCameraRemoteControl.Control
                 // ignore
             }
 
+            Vector3 desiredDir = _worldAimDir;
             float ang = Vector3.Angle(refDir, desiredDir);
             Vector3 cmdDir = desiredDir;
             if (ang > MaxCommandAngleDeg)
                 cmdDir = Vector3.RotateTowards(refDir, desiredDir, MaxCommandAngleDeg * Mathf.Deg2Rad, 0f);
 
-            // Soft lead: place aim ahead along command dir (vanilla-friendly intercept feel).
-            float lead = SoftLeadSeconds;
-            try
-            {
-                if (missile.rb != null)
-                    lead = Mathf.Clamp(SoftLeadSeconds * (1f + missile.rb.velocity.magnitude / 400f), 0.2f, 0.8f);
-            }
-            catch
-            {
-                // ignore
-            }
-
             Vector3 cmdPoint = mt.position + cmdDir * dist;
             try
             {
                 if (missile.rb != null)
-                    cmdPoint += missile.rb.velocity * lead * 0.15f;
+                {
+                    float lead = Mathf.Clamp(SoftLeadSeconds * (1f + missile.rb.velocity.magnitude / 400f), 0.2f, 0.7f);
+                    cmdPoint += missile.rb.velocity * lead * 0.12f;
+                }
             }
             catch
             {
@@ -115,26 +101,48 @@ namespace MissileCameraRemoteControl.Control
                 // ignore
             }
 
-            // Reticle = projection of the *player* world aim (not the softened command).
-            ProjectReticle(feed, mt, _worldAimLocal);
+            ProjectReticleStable(feed, mt, worldAimPoint);
         }
 
-        private static void ProjectReticle(Camera? feed, Transform missile, Vector3 worldAim)
+        /// <summary>
+        /// Project aim to viewport. If behind camera, keep last on-screen position (no edge teleport).
+        /// </summary>
+        private static void ProjectReticleStable(Camera? feed, Transform missile, Vector3 worldAimPoint)
         {
             if (feed != null)
             {
-                Vector3 vp = feed.WorldToViewportPoint(worldAim);
-                FsAimReticle.SetFromViewport(vp.x, vp.y, vp.z > 0f);
+                Vector3 vp = feed.WorldToViewportPoint(worldAimPoint);
+                if (vp.z > 0.05f)
+                {
+                    float vx = Mathf.Clamp01(vp.x);
+                    float vy = Mathf.Clamp01(vp.y);
+                    // Only accept if roughly on/near screen — avoid wild NaN jumps.
+                    if (!float.IsNaN(vx) && !float.IsNaN(vy) && !float.IsInfinity(vx) && !float.IsInfinity(vy))
+                    {
+                        _lastStableViewport = new Vector2(vx, vy);
+                        FsAimReticle.SetFromViewport(vx, vy, inFront: true);
+                        return;
+                    }
+                }
+
+                // Behind / invalid — hold last stable screen spot.
+                FsAimReticle.SetFromViewport(_lastStableViewport.x, _lastStableViewport.y, inFront: true);
                 return;
             }
 
-            // Fallback: body-relative angles → fake viewport
-            Vector3 local = missile.InverseTransformPoint(worldAim);
-            float yaw = Mathf.Atan2(local.x, local.z) * Mathf.Rad2Deg;
-            float pitch = Mathf.Atan2(local.y, local.z) * Mathf.Rad2Deg;
-            float vx = 0.5f + Mathf.Clamp(yaw / 60f, -0.48f, 0.48f);
-            float vy = 0.5f + Mathf.Clamp(pitch / 60f, -0.48f, 0.48f);
-            FsAimReticle.SetFromViewport(vx, vy, local.z > 0f);
+            Vector3 local = missile.InverseTransformPoint(worldAimPoint);
+            if (local.z > 0.05f)
+            {
+                float yaw = Mathf.Atan2(local.x, local.z) * Mathf.Rad2Deg;
+                float pitch = Mathf.Atan2(local.y, Mathf.Max(0.01f, local.z)) * Mathf.Rad2Deg;
+                float vx = Mathf.Clamp01(0.5f + Mathf.Clamp(yaw / 60f, -0.48f, 0.48f));
+                float vy = Mathf.Clamp01(0.5f + Mathf.Clamp(pitch / 60f, -0.48f, 0.48f));
+                _lastStableViewport = new Vector2(vx, vy);
+                FsAimReticle.SetFromViewport(vx, vy, inFront: true);
+                return;
+            }
+
+            FsAimReticle.SetFromViewport(_lastStableViewport.x, _lastStableViewport.y, inFront: true);
         }
     }
 }

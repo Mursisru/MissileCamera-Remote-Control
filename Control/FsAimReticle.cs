@@ -30,7 +30,7 @@ namespace MissileCameraRemoteControl.Control
                 _root.SetActive(true);
         }
 
-        /// <summary>Place circle from viewport coords (0..1). Off-screen aim → clamp to edge.</summary>
+        /// <summary>Place circle from viewport coords (0..1). Caller keeps aim stable — no behind-cam edge snaps.</summary>
         internal static void SetFromViewport(float vx, float vy, bool inFront)
         {
             if (!_visible)
@@ -38,15 +38,13 @@ namespace MissileCameraRemoteControl.Control
             EnsureUi();
 
             if (!inFront)
-            {
-                // Behind camera — pin to nearest screen edge in that direction.
-                Vector2 fromCenter = new Vector2(vx - 0.5f, vy - 0.5f);
-                if (fromCenter.sqrMagnitude < 1e-6f)
-                    fromCenter = Vector2.up;
-                fromCenter.Normalize();
-                vx = 0.5f + fromCenter.x * 0.48f;
-                vy = 0.5f + fromCenter.y * 0.48f;
-            }
+                return;
+
+            if (float.IsNaN(vx) || float.IsNaN(vy) || float.IsInfinity(vx) || float.IsInfinity(vy))
+                return;
+
+            vx = Mathf.Clamp01(vx);
+            vy = Mathf.Clamp01(vy);
 
             float margin = CircleSizePx * 0.5f;
             float sx = Mathf.Clamp(vx * Screen.width, margin, Screen.width - margin);
