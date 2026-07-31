@@ -7,7 +7,7 @@ using UnityEngine;
 
 namespace MissileCameraRemoteControl.Control
 {
-    /// <summary>Active RC session on one allied clone missile.</summary>
+    /// <summary>Active RC session — only while MissileCamera fullscreen is up.</summary>
     internal static class RemoteControlSession
     {
         private static Missile? _controlled;
@@ -16,7 +16,10 @@ namespace MissileCameraRemoteControl.Control
         internal static Missile? Controlled => _controlled;
 
         internal static bool IsActive =>
-            _controlled != null && !_controlled.disabled && AuthorityGate.CanControl(_controlled);
+            _controlled != null
+            && !_controlled.disabled
+            && AuthorityGate.CanControl(_controlled)
+            && MissileCameraFsAccess.IsFullscreenActive;
 
         internal static bool IsControlling(Missile? missile)
         {
@@ -27,6 +30,7 @@ namespace MissileCameraRemoteControl.Control
         {
             Release(silent: true);
             _pool.Clear();
+            FsAimReticle.DestroyUi();
         }
 
         internal static void Release(bool silent = false)
@@ -38,12 +42,19 @@ namespace MissileCameraRemoteControl.Control
                     RcPlugin.ModLogger?.LogInfo($"RC released: {_controlled.name}");
             }
             _controlled = null;
+            FsAimReticle.SetVisible(false);
             MouseGuidanceController.Reset();
             ThrottleController.Reset();
         }
 
         internal static void ToggleNearest()
         {
+            if (!MissileCameraFsAccess.IsFullscreenActive)
+            {
+                RcPlugin.ModLogger?.LogInfo("RC: enter MissileCamera Fullscreen (default K) before remote control.");
+                return;
+            }
+
             if (IsActive)
             {
                 Release();
@@ -63,6 +74,9 @@ namespace MissileCameraRemoteControl.Control
 
         internal static void Cycle(int direction)
         {
+            if (!MissileCameraFsAccess.IsFullscreenActive)
+                return;
+
             RefreshPool();
             if (_pool.Count == 0)
                 return;
@@ -83,6 +97,8 @@ namespace MissileCameraRemoteControl.Control
 
         internal static void Take(Missile missile)
         {
+            if (!MissileCameraFsAccess.IsFullscreenActive)
+                return;
             if (missile == null || !AuthorityGate.CanControl(missile) || !AuthorityGate.IsAllied(missile))
                 return;
             if (!MissileAccess.IsRcMissile(missile))
@@ -91,8 +107,9 @@ namespace MissileCameraRemoteControl.Control
             Release(silent: true);
             _controlled = missile;
             MouseGuidanceController.Reset();
+            FsAimReticle.SetVisible(true);
             ThrottleController.OnTakeControl(missile);
-            RcPlugin.ModLogger?.LogInfo($"RC engaged: {missile.name}");
+            RcPlugin.ModLogger?.LogInfo($"RC engaged (FS): {missile.name}");
         }
 
         internal static void Tick()
@@ -101,6 +118,13 @@ namespace MissileCameraRemoteControl.Control
             {
                 if (_controlled != null)
                     Release(silent: true);
+                return;
+            }
+
+            // Drop RC when leaving MissileCamera fullscreen.
+            if (_controlled != null && !MissileCameraFsAccess.IsFullscreenActive)
+            {
+                Release();
                 return;
             }
 

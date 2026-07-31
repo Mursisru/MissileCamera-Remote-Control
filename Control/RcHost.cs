@@ -128,6 +128,7 @@ namespace MissileCameraRemoteControl.Control
             RemoteControlSession.Clear();
             LaunchRcCapture.Clear();
             AfterburnerVfxBinder.ClearCache();
+            FsAimReticle.DestroyUi();
             _log?.LogInfo($"RC hard reset ({reason}).");
         }
 

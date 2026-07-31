@@ -187,4 +187,84 @@ namespace MissileCameraRemoteControl.HarmonyPatches
             }
         }
     }
+
+    /// <summary>Hangar weapon inspect: show DL / SATCOM instead of stock seeker type.</summary>
+    [HarmonyPatch(typeof(AircraftSelectionMenu), nameof(AircraftSelectionMenu.DisplayInfo), new Type[] { typeof(WeaponInfo) })]
+    internal static class AircraftSelectionGuidancePatch
+    {
+        private static readonly System.Reflection.FieldInfo? SeekerField =
+            typeof(AircraftSelectionMenu).GetField("weaponSeeker", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic);
+
+        private static void Postfix(AircraftSelectionMenu __instance, WeaponInfo weaponInfo)
+        {
+            try
+            {
+                if (weaponInfo == null || SeekerField == null)
+                    return;
+                if (!GuidanceLabels.TryFromWeaponName(weaponInfo.weaponName, out string label))
+                    return;
+                object? tmp = SeekerField.GetValue(__instance);
+                if (tmp is TMPro.TMP_Text text)
+                    text.text = label;
+            }
+            catch
+            {
+                // ignore
+            }
+        }
+    }
+
+    /// <summary>Encyclopedia Missiles tab: Guidance field = DL / SATCOM for RC definitions.</summary>
+    [HarmonyPatch(typeof(EncyclopediaBrowser), "DisplayUnitInfo")]
+    internal static class EncyclopediaGuidancePatch
+    {
+        private static readonly System.Reflection.FieldInfo? GuidanceField =
+            typeof(EncyclopediaBrowser).GetField("guidance", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic);
+
+        private static void Postfix(EncyclopediaBrowser __instance, UnitDefinition definition)
+        {
+            try
+            {
+                if (definition == null || GuidanceField == null)
+                    return;
+                if (!GuidanceLabels.TryFromUnitName(definition.unitName, out string label))
+                    return;
+                object? tmp = GuidanceField.GetValue(__instance);
+                if (tmp is TMPro.TMP_Text text)
+                    text.text = label;
+            }
+            catch
+            {
+                // ignore
+            }
+        }
+    }
+
+    /// <summary>Live missile / threat UI: RC missiles report DL or SATCOM.</summary>
+    [HarmonyPatch(typeof(Missile), nameof(Missile.GetSeekerType))]
+    internal static class MissileGetSeekerTypePatch
+    {
+        private static void Postfix(Missile __instance, ref string __result)
+        {
+            try
+            {
+                if (__instance == null)
+                    return;
+                RcMissileTag? tag = __instance.GetComponent<RcMissileTag>();
+                if (tag != null)
+                {
+                    __result = GuidanceLabels.For(tag.Guidance);
+                    return;
+                }
+
+                WeaponInfo? info = MissileAccess.GetMissileInfo(__instance);
+                if (info != null && GuidanceLabels.TryFromWeaponName(info.weaponName, out string label))
+                    __result = label;
+            }
+            catch
+            {
+                // ignore
+            }
+        }
+    }
 }

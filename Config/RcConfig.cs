@@ -28,8 +28,10 @@ namespace MissileCameraRemoteControl.Config
         internal static void Bind(ConfigFile config)
         {
             Enabled = config.Bind("General", "Enabled", true, "Master enable for Remote Control.");
-            MouseSensitivity = config.Bind("Control", "MouseSensitivity", 0.12f, "Mouse look sensitivity while RC active.");
-            AimDistance = config.Bind("Control", "AimDistance", 5000f, "Aimpoint distance ahead of nose (meters).");
+            MouseSensitivity = config.Bind("Control", "MouseSensitivity", 0.12f,
+                "FS aim-circle move speed (War Thunder style).");
+            AimDistance = config.Bind("Control", "AimDistance", 5000f,
+                "Aimpoint distance along FS reticle ray (meters).");
             JetBoostThrottle = config.Bind("Throttle", "JetBoostThrottle", 1.5f, "Jet afterburner throttle multiplier (>1).");
             JetBoostBurnMult = config.Bind("Throttle", "JetBoostBurnMult", 2.5f, "Jet fuel burn multiplier during boost.");
             SolidBoostThrottle = config.Bind("Throttle", "SolidBoostThrottle", 1.5f, "Solid boost thrust multiplier.");
@@ -37,7 +39,8 @@ namespace MissileCameraRemoteControl.Config
             SolidChokeThrottle = config.Bind("Throttle", "SolidChokeThrottle", 0.35f, "Solid choke thrust while choke held.");
             ThrottleStep = config.Bind("Throttle", "ThrottleStep", 0.05f, "Jet throttle step per key press.");
 
-            ToggleControl = config.Bind("Keybinds", "ToggleControl", new KeyboardShortcut(KeyCode.R), "Take / release RC on nearest allied clone missile.");
+            ToggleControl = config.Bind("Keybinds", "ToggleControl", new KeyboardShortcut(KeyCode.R),
+                "Take / release RC (requires MissileCamera Fullscreen).");
             CycleNext = config.Bind("Keybinds", "CycleNext", new KeyboardShortcut(KeyCode.RightBracket), "Cycle next controllable missile.");
             CyclePrev = config.Bind("Keybinds", "CyclePrev", new KeyboardShortcut(KeyCode.LeftBracket), "Cycle previous controllable missile.");
             ThrottleUp = config.Bind("Keybinds", "ThrottleUp", new KeyboardShortcut(KeyCode.Equals), "Increase jet throttle.");

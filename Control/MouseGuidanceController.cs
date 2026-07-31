@@ -1,18 +1,20 @@
+using MissileCameraRemoteControl.Access;
 using MissileCameraRemoteControl.Config;
 using UnityEngine;
 
 namespace MissileCameraRemoteControl.Control
 {
-    /// <summary>Mouse → SetAimpoint. Vanilla Steering/ApplyAero untouched (Over-G intact).</summary>
+    /// <summary>
+    /// War Thunder-style: missile steers toward the FS aim circle.
+    /// Prefer MissileCamera feed camera ray; fallback to nose-relative angles.
+    /// </summary>
     internal static class MouseGuidanceController
     {
-        private static float _pitch;
-        private static float _yaw;
+        private const float FallbackMaxAngleDeg = 45f;
 
         internal static void Reset()
         {
-            _pitch = 0f;
-            _yaw = 0f;
+            FsAimReticle.ResetToCenter();
         }
 
         internal static void Tick(Missile missile)
@@ -20,15 +22,30 @@ namespace MissileCameraRemoteControl.Control
             if (missile == null || missile.disabled)
                 return;
 
-            float sens = RcConfig.MouseSensitivity.Value;
-            _yaw += Input.GetAxisRaw("Mouse X") * sens * 10f;
-            _pitch -= Input.GetAxisRaw("Mouse Y") * sens * 10f;
-            _pitch = Mathf.Clamp(_pitch, -85f, 85f);
-
-            Quaternion offset = Quaternion.Euler(_pitch, _yaw, 0f);
-            Vector3 dir = missile.transform.rotation * offset * Vector3.forward;
+            FsAimReticle.TickMove();
+            Vector2 sp = FsAimReticle.ScreenPosition;
             float dist = Mathf.Max(100f, RcConfig.AimDistance.Value);
-            GlobalPosition aim = (missile.transform.position + dir * dist).ToGlobalPosition();
+
+            GlobalPosition aim;
+            Camera? feed = MissileCameraFsAccess.TryGetFeedCamera();
+            if (feed != null)
+            {
+                // Feed RT is shown fullscreen — viewport matches screen.
+                float vx = sp.x / Mathf.Max(1f, Screen.width);
+                float vy = sp.y / Mathf.Max(1f, Screen.height);
+                Ray ray = feed.ViewportPointToRay(new Vector3(vx, vy, 0f));
+                Vector3 world = ray.origin + ray.direction.normalized * dist;
+                aim = world.ToGlobalPosition();
+            }
+            else
+            {
+                float nx = (sp.x / Mathf.Max(1f, Screen.width) - 0.5f) * 2f;
+                float ny = (sp.y / Mathf.Max(1f, Screen.height) - 0.5f) * 2f;
+                float yaw = nx * FallbackMaxAngleDeg;
+                float pitch = -ny * FallbackMaxAngleDeg;
+                Vector3 dir = missile.transform.rotation * Quaternion.Euler(pitch, yaw, 0f) * Vector3.forward;
+                aim = (missile.transform.position + dir * dist).ToGlobalPosition();
+            }
 
             try
             {

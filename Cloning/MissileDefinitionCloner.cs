@@ -62,12 +62,8 @@ namespace MissileCameraRemoteControl.Cloning
                 if (!string.IsNullOrEmpty(srcDef.bogeyName))
                     defClone.bogeyName = CloneProfile.MakeDisplayName(srcDef.bogeyName, guidance);
 
-                string channel = guidance == RcGuidanceKind.Satcom
-                    ? "SATCOM satellite command"
-                    : "Data-Link (DL) mesh relay";
-                string baseDesc = srcDef.description ?? string.Empty;
-                defClone.description =
-                    $"[MissileCamera Remote Control]\nGuidance: {channel}. Manual mouse RC with vanilla aero; signal loss falls back to stock seeker.\n\n{baseDesc}";
+                // Vanilla-like: keep stock description, no mod branding.
+                defClone.description = srcDef.description ?? string.Empty;
 
                 // Same network prefab as vanilla — required for Mirage RegisterPrefab / encyclopedia spawn.
                 defClone.unitPrefab = srcDef.unitPrefab;
