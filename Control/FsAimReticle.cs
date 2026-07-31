@@ -4,7 +4,7 @@ using UnityEngine.UI;
 
 namespace MissileCameraRemoteControl.Control
 {
-    /// <summary>War Thunder-style aim circle drawn over MissileCamera fullscreen.</summary>
+    /// <summary>Draws the WT aim circle at a screen position (projection of world aim).</summary>
     internal static class FsAimReticle
     {
         private const float CircleSizePx = 56f;
@@ -13,16 +13,7 @@ namespace MissileCameraRemoteControl.Control
         private static GameObject? _root;
         private static RectTransform? _circleRt;
         private static Canvas? _canvas;
-        private static Vector2 _screenPos;
         private static bool _visible;
-
-        internal static Vector2 ScreenPosition => _screenPos;
-
-        internal static void ResetToCenter()
-        {
-            _screenPos = new Vector2(Screen.width * 0.5f, Screen.height * 0.5f);
-            ApplyTransform();
-        }
 
         internal static void SetVisible(bool visible)
         {
@@ -37,23 +28,30 @@ namespace MissileCameraRemoteControl.Control
             EnsureUi();
             if (_root != null)
                 _root.SetActive(true);
-            ApplyTransform();
         }
 
-        internal static void TickMove()
+        /// <summary>Place circle from viewport coords (0..1). Off-screen aim → clamp to edge.</summary>
+        internal static void SetFromViewport(float vx, float vy, bool inFront)
         {
             if (!_visible)
                 return;
-
             EnsureUi();
-            float sens = Mathf.Max(0.01f, RcConfig.MouseSensitivity.Value) * 80f;
-            _screenPos.x += Input.GetAxisRaw("Mouse X") * sens;
-            _screenPos.y += Input.GetAxisRaw("Mouse Y") * sens;
+
+            if (!inFront)
+            {
+                // Behind camera — pin to nearest screen edge in that direction.
+                Vector2 fromCenter = new Vector2(vx - 0.5f, vy - 0.5f);
+                if (fromCenter.sqrMagnitude < 1e-6f)
+                    fromCenter = Vector2.up;
+                fromCenter.Normalize();
+                vx = 0.5f + fromCenter.x * 0.48f;
+                vy = 0.5f + fromCenter.y * 0.48f;
+            }
 
             float margin = CircleSizePx * 0.5f;
-            _screenPos.x = Mathf.Clamp(_screenPos.x, margin, Screen.width - margin);
-            _screenPos.y = Mathf.Clamp(_screenPos.y, margin, Screen.height - margin);
-            ApplyTransform();
+            float sx = Mathf.Clamp(vx * Screen.width, margin, Screen.width - margin);
+            float sy = Mathf.Clamp(vy * Screen.height, margin, Screen.height - margin);
+            ApplyScreenPos(new Vector2(sx, sy));
         }
 
         internal static void DestroyUi()
@@ -66,6 +64,17 @@ namespace MissileCameraRemoteControl.Control
                 _canvas = null;
             }
             _visible = false;
+        }
+
+        private static void ApplyScreenPos(Vector2 screenPos)
+        {
+            if (_circleRt == null || _canvas == null)
+                return;
+            RectTransform? canvasRt = _canvas.transform as RectTransform;
+            if (canvasRt == null)
+                return;
+            if (RectTransformUtility.ScreenPointToLocalPointInRectangle(canvasRt, screenPos, null, out Vector2 local))
+                _circleRt.anchoredPosition = local;
         }
 
         private static void EnsureUi()
@@ -88,43 +97,19 @@ namespace MissileCameraRemoteControl.Control
             _circleRt = circleGo.AddComponent<RectTransform>();
             _circleRt.sizeDelta = new Vector2(CircleSizePx, CircleSizePx);
 
-            // Outer ring
             var ring = circleGo.AddComponent<Image>();
             ring.sprite = CreateRingSprite();
             ring.color = new Color(0.85f, 0.95f, 0.75f, 0.92f);
             ring.raycastTarget = false;
 
-            // Center pip
             var pipGo = new GameObject("Pip");
             pipGo.transform.SetParent(circleGo.transform, false);
             var pipRt = pipGo.AddComponent<RectTransform>();
             pipRt.sizeDelta = new Vector2(6f, 6f);
-            pipRt.anchoredPosition = Vector2.zero;
             var pip = pipGo.AddComponent<Image>();
             pip.sprite = CreateFilledSprite();
             pip.color = new Color(0.9f, 1f, 0.7f, 0.95f);
             pip.raycastTarget = false;
-
-            ResetToCenter();
-        }
-
-        private static void ApplyTransform()
-        {
-            if (_circleRt == null || _canvas == null)
-                return;
-
-            RectTransform? canvasRt = _canvas.transform as RectTransform;
-            if (canvasRt == null)
-                return;
-
-            if (RectTransformUtility.ScreenPointToLocalPointInRectangle(
-                    canvasRt,
-                    _screenPos,
-                    null,
-                    out Vector2 local))
-            {
-                _circleRt.anchoredPosition = local;
-            }
         }
 
         private static Sprite CreateRingSprite()
@@ -159,8 +144,7 @@ namespace MissileCameraRemoteControl.Control
                 for (int x = 0; x < size; x++)
                 {
                     float d = Mathf.Sqrt((x - c) * (x - c) + (y - c) * (y - c));
-                    float a = d <= r ? 1f : 0f;
-                    tex.SetPixel(x, y, new Color(1f, 1f, 1f, a));
+                    tex.SetPixel(x, y, new Color(1f, 1f, 1f, d <= r ? 1f : 0f));
                 }
             }
             tex.Apply();

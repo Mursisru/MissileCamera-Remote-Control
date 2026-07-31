@@ -28,10 +28,10 @@ namespace MissileCameraRemoteControl.Config
         internal static void Bind(ConfigFile config)
         {
             Enabled = config.Bind("General", "Enabled", true, "Master enable for Remote Control.");
-            MouseSensitivity = config.Bind("Control", "MouseSensitivity", 0.12f,
-                "FS aim-circle move speed (War Thunder style).");
-            AimDistance = config.Bind("Control", "AimDistance", 5000f,
-                "Aimpoint distance along FS reticle ray (meters).");
+            MouseSensitivity = config.Bind("Control", "MouseSensitivity", 0.08f,
+                "Mouse aim rate for world-space WT reticle (lower = smoother).");
+            AimDistance = config.Bind("Control", "AimDistance", 4000f,
+                "World aim / command point distance (meters).");
             JetBoostThrottle = config.Bind("Throttle", "JetBoostThrottle", 1.5f, "Jet afterburner throttle multiplier (>1).");
             JetBoostBurnMult = config.Bind("Throttle", "JetBoostBurnMult", 2.5f, "Jet fuel burn multiplier during boost.");
             SolidBoostThrottle = config.Bind("Throttle", "SolidBoostThrottle", 1.5f, "Solid boost thrust multiplier.");

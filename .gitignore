@@ -14,5 +14,3 @@ Directory.Build.user.props
 *.tmp
 Thumbs.db
 Desktop.ini
-
-_tmp_*

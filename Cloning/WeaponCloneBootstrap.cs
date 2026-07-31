@@ -125,8 +125,7 @@ namespace MissileCameraRemoteControl.Cloning
             infoClone.weaponName = CloneProfile.MakeDisplayName(original.info.weaponName, guidance);
             if (!string.IsNullOrEmpty(original.info.shortName))
                 infoClone.shortName = CloneProfile.MakeDisplayName(original.info.shortName, guidance);
-            // Keep stock description (vanilla-like encyclopedia / hangar text).
-            infoClone.description = original.info.description;
+            infoClone.description = RcWeaponDescriptions.Resolve(original.info.weaponName, guidance);
 
             // CRITICAL: keep vanilla flying prefab — runtime Instantiates are NOT Mirage-registered and despawn on Spawn().
             infoClone.weaponPrefab = original.info.weaponPrefab;

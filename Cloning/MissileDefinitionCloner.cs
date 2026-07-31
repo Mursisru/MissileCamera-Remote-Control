@@ -62,8 +62,10 @@ namespace MissileCameraRemoteControl.Cloning
                 if (!string.IsNullOrEmpty(srcDef.bogeyName))
                     defClone.bogeyName = CloneProfile.MakeDisplayName(srcDef.bogeyName, guidance);
 
-                // Vanilla-like: keep stock description, no mod branding.
-                defClone.description = srcDef.description ?? string.Empty;
+                // Vanilla-tone original blurb (not a 1:1 stock paste).
+                defClone.description = RcWeaponDescriptions.Resolve(srcDef.unitName, guidance);
+                if (string.IsNullOrEmpty(defClone.description) && clone.info != null)
+                    defClone.description = clone.info.description ?? string.Empty;
 
                 // Same network prefab as vanilla — required for Mirage RegisterPrefab / encyclopedia spawn.
                 defClone.unitPrefab = srcDef.unitPrefab;
