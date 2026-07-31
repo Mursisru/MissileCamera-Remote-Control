@@ -6,7 +6,7 @@
 [![Requires MissileCamera](https://img.shields.io/badge/Requires-MissileCamera-lightgrey)](https://github.com/Mursisru/MissileCamera)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
-BepInEx 5 addon for **Nuclear Option** that extends [MissileCamera](https://github.com/Mursisru/MissileCamera) with remote-control clone munitions (`[DL]` / `[SATCOM]`), mouse guidance, throttle/boost, retarget, and airburst.
+BepInEx 5 addon for **Nuclear Option** that extends [MissileCamera](https://github.com/Mursisru/MissileCamera) with remote-control clone munitions (`[DL]` / `[SATCOM]`), mouse guidance, and throttle / afterburner control.
 
 **Plugin GUID:** `com.at747.missilecamera.remotecontrol`
 
@@ -30,8 +30,7 @@ BepInEx 5 addon for **Nuclear Option** that extends [MissileCamera](https://gith
 - Selective clones of cruise / heavy munitions with **[DL]** or **[SATCOM]** labels
 - Hardpoint-compatible loadout injection
 - Manual mouse aim via vanilla `SetAimpoint` (stock aero / Over-G retained)
-- Jet / solid throttle, boost, afterburner VFX reuse
-- Retarget and manual airburst
+- Jet / solid throttle, afterburner, afterburner VFX reuse
 - Encyclopedia missile entries for RC variants
 
 ---
@@ -56,13 +55,11 @@ BepInEx 5 addon for **Nuclear Option** that extends [MissileCamera](https://gith
 
 | Action | Default |
 |--------|---------|
-| Toggle RC (nearest allied clone) | `R` |
-| Cycle next / prev | `]` / `[` |
-| Throttle up / down | `=` / `-` |
-| Boost | Left Shift |
-| Solid choke | Left Ctrl |
-| Retarget | `T` |
-| Airburst | Space |
+| Take / release RC | `T` |
+| Afterburner (hold) | Left Shift |
+| Throttle up | Right Shift |
+| Throttle down | Right Ctrl |
+| Aim | Mouse |
 
 Configure under `com.at747.missilecamera.remotecontrol.cfg`.
 

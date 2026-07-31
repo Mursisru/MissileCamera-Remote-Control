@@ -72,29 +72,6 @@ namespace MissileCameraRemoteControl.Control
             Take(best);
         }
 
-        internal static void Cycle(int direction)
-        {
-            if (!MissileCameraFsAccess.IsFullscreenActive)
-                return;
-
-            RefreshPool();
-            if (_pool.Count == 0)
-                return;
-
-            int idx = 0;
-            if (_controlled != null)
-            {
-                idx = _pool.IndexOf(_controlled);
-                if (idx < 0)
-                    idx = 0;
-            }
-
-            idx = (idx + direction) % _pool.Count;
-            if (idx < 0)
-                idx += _pool.Count;
-            Take(_pool[idx]);
-        }
-
         internal static void Take(Missile missile)
         {
             if (!MissileCameraFsAccess.IsFullscreenActive)
@@ -109,6 +86,7 @@ namespace MissileCameraRemoteControl.Control
             MouseGuidanceController.Reset();
             FsAimReticle.SetVisible(true);
             ThrottleController.OnTakeControl(missile);
+            RcWarheadSafety.Tick(missile);
             RcPlugin.ModLogger?.LogInfo($"RC engaged (FS): {missile.name}");
         }
 
@@ -136,18 +114,13 @@ namespace MissileCameraRemoteControl.Control
 
             if (KeybindPoll.IsDown(RcConfig.ToggleControl.Value))
                 ToggleNearest();
-            else if (KeybindPoll.IsDown(RcConfig.CycleNext.Value))
-                Cycle(1);
-            else if (KeybindPoll.IsDown(RcConfig.CyclePrev.Value))
-                Cycle(-1);
 
             if (!IsActive || _controlled == null)
                 return;
 
+            RcWarheadSafety.Tick(_controlled);
             MouseGuidanceController.Tick(_controlled);
             ThrottleController.Tick(_controlled);
-            RetargetController.Tick(_controlled);
-            AirburstController.Tick(_controlled);
         }
 
         private static void RefreshPool()
