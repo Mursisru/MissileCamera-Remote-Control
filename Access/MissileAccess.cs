@@ -9,7 +9,7 @@ namespace MissileCameraRemoteControl.Access
     internal static class MissileAccess
     {
         internal static readonly Type? MotorType =
-            typeof(Missile).GetNestedType("Motor", BindingFlags.NonPublic);
+            typeof(Missile).GetNestedType("Motor", BindingFlags.NonPublic | BindingFlags.Public);
 
         private static readonly FieldInfo? MotorsField =
             typeof(Missile).GetField("motors", BindingFlags.Instance | BindingFlags.NonPublic);
@@ -147,8 +147,8 @@ namespace MissileCameraRemoteControl.Access
                 WeaponInfo? info = GetMissileInfo(missile);
                 if (info == null || string.IsNullOrEmpty(info.weaponName))
                     return false;
-                return info.weaponName.StartsWith(CloneProfile.DlPrefix, StringComparison.Ordinal)
-                    || info.weaponName.StartsWith(CloneProfile.SatPrefix, StringComparison.Ordinal);
+                return CloneProfile.IsRcDisplayName(info.weaponName)
+                    || CloneProfile.TryGetGuidanceFromRcName(info.weaponName, out _);
             }
             catch
             {

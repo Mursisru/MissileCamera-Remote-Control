@@ -91,12 +91,13 @@ namespace MissileCameraRemoteControl.HarmonyPatches
                 if (string.IsNullOrEmpty(name))
                     return;
 
-                bool isDl = name!.StartsWith(CloneProfile.DlPrefix, StringComparison.Ordinal);
-                bool isSat = name.StartsWith(CloneProfile.SatPrefix, StringComparison.Ordinal);
-                if (!isDl && !isSat)
+                bool isRc = CloneProfile.IsRcDisplayName(name)
+                    || CloneProfile.TryGetGuidanceFromRcName(name, out _);
+                if (!isRc)
                     return;
 
-                EnsureRcTag(missile, isSat ? RcGuidanceKind.Satcom : RcGuidanceKind.DataLink, name);
+                CloneProfile.TryGetGuidanceFromRcName(name, out RcGuidanceKind guidance);
+                EnsureRcTag(missile, guidance, name!);
             }
             catch
             {
@@ -108,9 +109,7 @@ namespace MissileCameraRemoteControl.HarmonyPatches
         {
             RcMissileTag tag = missile.gameObject.AddComponent<RcMissileTag>();
             tag.Guidance = guidance;
-            string bare = guidance == RcGuidanceKind.Satcom
-                ? name.Substring(CloneProfile.SatPrefix.Length)
-                : name.Substring(CloneProfile.DlPrefix.Length);
+            string bare = CloneProfile.StripLegacyPrefix(name);
             if (!CloneProfile.TryResolveEngineFromWeaponName(bare, out tag.Engine))
                 tag.Engine = RcEngineKind.Jet;
 
@@ -147,7 +146,13 @@ namespace MissileCameraRemoteControl.HarmonyPatches
 
     internal static class RcMotorThrustPatch
     {
-        public static void Prefix(Missile missile, ref float throttle, object __instance, out float __state)
+        public static void Prefix(
+            Missile missile,
+            bool localSim,
+            Vector3 inputs,
+            ref float throttle,
+            object __instance,
+            out float __state)
         {
             __state = -1f;
             try

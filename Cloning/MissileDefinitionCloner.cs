@@ -58,9 +58,11 @@ namespace MissileCameraRemoteControl.Cloning
                 MissileDefinition defClone = UnityEngine.Object.Instantiate(srcMissileDef);
                 defClone.name = srcMissileDef.name + (guidance == RcGuidanceKind.Satcom ? "_RC_SAT" : "_RC_DL");
                 defClone.jsonKey = defKey;
-                defClone.unitName = CloneProfile.MakeDisplayName(srcDef.unitName, guidance);
+                defClone.unitName = CloneProfile.MakeDisplayName(
+                    srcDef.unitName, guidance, original.jsonKey, srcDef.bogeyName);
                 if (!string.IsNullOrEmpty(srcDef.bogeyName))
-                    defClone.bogeyName = CloneProfile.MakeDisplayName(srcDef.bogeyName, guidance);
+                    defClone.bogeyName = CloneProfile.MakeDisplayName(
+                        srcDef.bogeyName, guidance, original.jsonKey, srcDef.unitName);
 
                 // Vanilla-tone original blurb (not a 1:1 stock paste).
                 defClone.description = RcWeaponDescriptions.Resolve(srcDef.unitName, guidance);

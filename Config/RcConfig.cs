@@ -14,7 +14,7 @@ namespace MissileCameraRemoteControl.Config
         internal static ConfigEntry<float> SolidBoostBurnMult { get; private set; } = null!;
         internal static ConfigEntry<float> ThrottleStep { get; private set; } = null!;
 
-        // Only player binds: T control, LShift AB, RShift throttle+, RCtrl throttle− (+ mouse aim).
+        // Fresh entry NAMES so stale Equals/Minus/R from old cfg cannot stick.
         internal static ConfigEntry<KeyboardShortcut> ToggleControl { get; private set; } = null!;
         internal static ConfigEntry<KeyboardShortcut> ThrottleUp { get; private set; } = null!;
         internal static ConfigEntry<KeyboardShortcut> ThrottleDown { get; private set; } = null!;
@@ -31,16 +31,19 @@ namespace MissileCameraRemoteControl.Config
             JetBoostBurnMult = config.Bind("Throttle", "JetBoostBurnMult", 2.5f, "Jet fuel burn multiplier during boost.");
             SolidBoostThrottle = config.Bind("Throttle", "SolidBoostThrottle", 1.5f, "Solid boost thrust multiplier.");
             SolidBoostBurnMult = config.Bind("Throttle", "SolidBoostBurnMult", 2f, "Solid burn rate multiplier during boost.");
-            ThrottleStep = config.Bind("Throttle", "ThrottleStep", 0.05f, "Throttle step per key press.");
+            ThrottleStep = config.Bind("Throttle", "ThrottleStep", 0.05f, "Throttle step on tap; hold ramps faster.");
 
-            ToggleControl = config.Bind("Keybinds", "ToggleControl", new KeyboardShortcut(KeyCode.T),
+            ToggleControl = config.Bind("Keybinds", "TakeControl", new KeyboardShortcut(KeyCode.T),
                 "Take / release RC (requires MissileCamera Fullscreen).");
-            ThrottleUp = config.Bind("Keybinds", "ThrottleUp", new KeyboardShortcut(KeyCode.RightShift),
-                "Increase throttle.");
-            ThrottleDown = config.Bind("Keybinds", "ThrottleDown", new KeyboardShortcut(KeyCode.RightControl),
-                "Decrease throttle.");
-            Boost = config.Bind("Keybinds", "Boost", new KeyboardShortcut(KeyCode.LeftShift),
+            ThrottleUp = config.Bind("Keybinds", "ThrottleIncrease", new KeyboardShortcut(KeyCode.RightShift),
+                "Increase throttle (hold to ramp).");
+            ThrottleDown = config.Bind("Keybinds", "ThrottleDecrease", new KeyboardShortcut(KeyCode.RightControl),
+                "Decrease throttle (hold to ramp).");
+            Boost = config.Bind("Keybinds", "Afterburner", new KeyboardShortcut(KeyCode.LeftShift),
                 "Hold afterburner / turbo-boost.");
+
+            RcPlugin.ModLogger?.LogInfo(
+                $"RC binds: Take={ToggleControl.Value} Thr+={ThrottleUp.Value} Thr-={ThrottleDown.Value} AB={Boost.Value}");
         }
     }
 }

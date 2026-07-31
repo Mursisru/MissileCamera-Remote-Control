@@ -33,12 +33,13 @@ namespace MissileCameraRemoteControl.Control
             if (string.IsNullOrEmpty(name))
                 return;
 
-            bool isDl = name!.StartsWith(CloneProfile.DlPrefix, StringComparison.Ordinal);
-            bool isSat = name.StartsWith(CloneProfile.SatPrefix, StringComparison.Ordinal);
-            if (!isDl && !isSat)
+            bool isRc = CloneProfile.IsRcDisplayName(name)
+                || CloneProfile.TryGetGuidanceFromRcName(name, out _);
+            if (!isRc)
                 return;
 
-            RcGuidanceKind guidance = isSat ? RcGuidanceKind.Satcom : RcGuidanceKind.DataLink;
+            RcGuidanceKind guidance = RcGuidanceKind.DataLink;
+            CloneProfile.TryGetGuidanceFromRcName(name, out guidance);
             RcEngineKind engine = RcEngineKind.Jet;
             string sourceKey = string.Empty;
             string backup = string.Empty;
@@ -56,10 +57,7 @@ namespace MissileCameraRemoteControl.Control
                 }
                 else
                 {
-                    string bare = isSat
-                        ? name.Substring(CloneProfile.SatPrefix.Length)
-                        : name.Substring(CloneProfile.DlPrefix.Length);
-                    CloneProfile.TryResolveEngineFromWeaponName(bare, out engine);
+                    CloneProfile.TryResolveEngineFromWeaponName(CloneProfile.StripLegacyPrefix(name!), out engine);
                 }
             }
             catch

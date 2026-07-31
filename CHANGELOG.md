@@ -15,7 +15,7 @@ All notable changes to **MissileCamera: Remote Control** are documented in this 
 
 ### Changed
 
-- Aim: world yaw/pitch (no zenith gimbal); remove soft-lead overshoot; reticle matches command point.
-- Throttle field kept at 0-1 for MissileCamera THR gauge; afterburner via Motor.Thrust only.
+- RC weapon display names remapped (AGM-98D, ALM-D500, …); HE only on Tusko / conventional Piledriver; 20kt on nuclear.
+- Throttle binds renamed; pylon mesh SpawnMount fix; RC self-destruct gate; THR gauge snap.
 
 - Default keybinds: `T` take/release RC, Left Shift afterburner, Right Shift / Right Ctrl throttle; mouse aim only. Cycle, choke, retarget, and airburst binds removed.

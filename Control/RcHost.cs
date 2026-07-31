@@ -40,6 +40,7 @@ namespace MissileCameraRemoteControl.Control
                 _harmony.PatchAll(typeof(RcPlugin).Assembly);
                 PatchAllSeekerOverrides(_harmony);
                 PatchMotorThrust(_harmony);
+                HarmonyPatches.RcMissileCameraThrSnap.TryPatch(_harmony, _log);
                 _log?.LogInfo("Harmony patched.");
             }
             catch (Exception ex)
