@@ -193,20 +193,7 @@ namespace MissileCameraRemoteControl.Control
             }
 
             TrySetSeekerTarget(missile, unit);
-
-            try
-            {
-                Transform? tf = unit.transform;
-                Rigidbody? rb = null;
-                try { rb = unit.rb; }
-                catch { rb = unit.GetComponent<Rigidbody>(); }
-                if (tf != null)
-                    missile.SetProxyFuse(tf, rb);
-            }
-            catch
-            {
-                // ignore
-            }
+            // No SetProxyFuse under RC — CPA fly-by must not airburst (impact only).
 
             // Reflect on HUD markers for feedback (aircraft list restored on RC exit).
             try

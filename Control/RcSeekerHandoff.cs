@@ -107,18 +107,26 @@ namespace MissileCameraRemoteControl.Control
                     ApplyGeneric(missile, known, knownVel);
             }
 
-            try
+            // Proxy only on Release commit, and only if seeker wants proximity (vanilla).
+            if (writeAimpoint && seeker.proximityFuse)
             {
-                Transform? tf = unit.transform;
-                Rigidbody? rb = null;
-                try { rb = unit.rb; }
-                catch { rb = unit.GetComponent<Rigidbody>(); }
-                if (tf != null)
-                    missile.SetProxyFuse(tf, rb);
+                try
+                {
+                    Transform? tf = unit.transform;
+                    Rigidbody? rb = null;
+                    try { rb = unit.rb; }
+                    catch { rb = unit.GetComponent<Rigidbody>(); }
+                    if (tf != null)
+                        missile.SetProxyFuse(tf, rb);
+                }
+                catch
+                {
+                    // ignore
+                }
             }
-            catch
+            else if (!writeAimpoint)
             {
-                // ignore
+                Access.MissileAccess.ClearProxyFuse(missile);
             }
 
             if (log)

@@ -33,10 +33,31 @@ namespace MissileCameraRemoteControl.Access
         private static readonly FieldInfo? MissileInfoField =
             typeof(Missile).GetField("info", BindingFlags.Instance | BindingFlags.NonPublic);
 
+        private static readonly FieldInfo? ProxyFuseField =
+            typeof(Missile).GetField("proxyFuse", BindingFlags.Instance | BindingFlags.NonPublic);
+
         private static readonly MethodInfo? ThrustMethod =
             MotorType?.GetMethod("Thrust", BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic);
 
         internal static MethodInfo? MotorThrustMethod => ThrustMethod;
+
+        /// <summary>
+        /// Null private ProxyFuse — while RC, near-miss CPA airburst must not fire
+        /// (vanilla Detonate from DetectCollisions when ConditionsMet).
+        /// </summary>
+        internal static void ClearProxyFuse(Missile? missile)
+        {
+            if (missile == null || ProxyFuseField == null)
+                return;
+            try
+            {
+                ProxyFuseField.SetValue(missile, null);
+            }
+            catch
+            {
+                // ignore
+            }
+        }
 
         internal static Array? GetMotors(Missile missile)
         {

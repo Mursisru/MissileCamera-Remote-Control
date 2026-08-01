@@ -1,28 +1,23 @@
-using System.Reflection;
 using UnityEngine;
 
 namespace MissileCameraRemoteControl.Control
 {
     /// <summary>
-    /// Skipping seeker.Seek() under RC also skips Arm / SetTangible / DeployFins / proxy setup.
-    /// DeployFins / Arm / Tangible are one-shot — spam DeployFins every frame re-fires RpcUnfoldFins
-    /// (~1s fold animation) and is a prime suspect for periodic aero jerks.
+    /// Skipping seeker.Seek() under RC also skips Arm / SetTangible / DeployFins.
+    /// DeployFins / Arm / Tangible are one-shot — spam DeployFins every frame re-fires RpcUnfoldFins.
+    /// No SetProxyFuse under RC: vanilla ProxyFuse.ConditionsMet airbursts on CPA fly-by
+    /// (inside DetectCollisions → RcDetonateGate allows it). Impact fuse still works.
     /// </summary>
     internal static class RcWarheadSafety
     {
         private const float FinDelay = 0.5f;
         private const float TangibleDelay = 1.5f;
         private const float ArmDelay = 2f;
-        private const float ProxyInterval = 0.25f;
-
-        private static readonly FieldInfo? TargetField =
-            typeof(Missile).GetField("target", BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic);
 
         private static int _missileId;
         private static bool _finsDone;
         private static bool _tangibleDone;
         private static bool _armDone;
-        private static float _nextProxyTime;
 
         internal static void Reset()
         {
@@ -30,7 +25,6 @@ namespace MissileCameraRemoteControl.Control
             _finsDone = false;
             _tangibleDone = false;
             _armDone = false;
-            _nextProxyTime = 0f;
         }
 
         internal static void Tick(Missile missile)
@@ -45,8 +39,10 @@ namespace MissileCameraRemoteControl.Control
                 _finsDone = false;
                 _tangibleDone = false;
                 _armDone = false;
-                _nextProxyTime = 0f;
             }
+
+            // Kill proximity every tick — retarget/seeker may re-arm it.
+            Access.MissileAccess.ClearProxyFuse(missile);
 
             float age = 0f;
             try
@@ -97,33 +93,6 @@ namespace MissileCameraRemoteControl.Control
                 {
                     // retry
                 }
-            }
-
-            if (Time.unscaledTime < _nextProxyTime)
-                return;
-            _nextProxyTime = Time.unscaledTime + ProxyInterval;
-
-            try
-            {
-                Unit? target = TargetField?.GetValue(missile) as Unit;
-                if (target != null && !target.disabled && target.transform != null)
-                {
-                    Rigidbody? trb = null;
-                    try
-                    {
-                        trb = target.rb;
-                    }
-                    catch
-                    {
-                        trb = target.GetComponent<Rigidbody>();
-                    }
-
-                    missile.SetProxyFuse(target.transform, trb);
-                }
-            }
-            catch
-            {
-                // ignore
             }
         }
     }
