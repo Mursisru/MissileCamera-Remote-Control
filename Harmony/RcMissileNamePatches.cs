@@ -10,6 +10,7 @@ namespace MissileCameraRemoteControl.HarmonyPatches
     /// <summary>
     /// Spawner always sets NetworkunitName from shared vanilla prefab definition.
     /// Rename to RC display name immediately before Mirage Spawn so initial SyncVar + PersistentUnit stick.
+    /// Mirage param is named <c>obj</c> (not prefab) — wrong names abort PatchAll and kill Motor.Thrust.
     /// </summary>
     internal static class RcMissileNamePatches
     {
@@ -17,9 +18,9 @@ namespace MissileCameraRemoteControl.HarmonyPatches
             new Type[] { typeof(ServerObjectManager), typeof(GameObject), typeof(INetworkPlayer) })]
         private static class ServerSpawnGoPlayerPatch
         {
-            private static void Prefix(GameObject prefab)
+            private static void Prefix(GameObject obj)
             {
-                LaunchRcCapture.TryRenameBeforeNetworkSpawn(prefab);
+                LaunchRcCapture.TryRenameBeforeNetworkSpawn(obj);
             }
         }
 
@@ -27,9 +28,9 @@ namespace MissileCameraRemoteControl.HarmonyPatches
             new Type[] { typeof(ServerObjectManager), typeof(GameObject), typeof(int), typeof(INetworkPlayer) })]
         private static class ServerSpawnGoOwnerPatch
         {
-            private static void Prefix(GameObject prefab)
+            private static void Prefix(GameObject obj)
             {
-                LaunchRcCapture.TryRenameBeforeNetworkSpawn(prefab);
+                LaunchRcCapture.TryRenameBeforeNetworkSpawn(obj);
             }
         }
 

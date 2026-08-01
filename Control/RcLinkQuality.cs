@@ -6,6 +6,7 @@ namespace MissileCameraRemoteControl.Control
     /// <summary>
     /// DL mesh quality: ally within MeshRange + LoS = Full;
     /// in range without LoS = Degraded; out of range or jam &gt; JamBreakSeconds = Lost.
+    /// Ownship (local aircraft) in mesh = Full — player is the DL node (FS LoS to own jet often fails).
     /// SATCOM always Full (terrain / jam ignored).
     /// </summary>
     internal static class RcLinkQuality
@@ -62,6 +63,18 @@ namespace MissileCameraRemoteControl.Control
             float ecmThreshold = Mathf.Max(0.01f, RcConfig.JamEcmThreshold.Value);
             float jamBreak = Mathf.Max(0.5f, RcConfig.JamBreakSeconds.Value);
 
+            // Local aircraft is the datalink source — Full while in mesh (no optical LoS needed).
+            if (TryOwnshipInMesh(missile, meshRange))
+            {
+                if (IsInEnemyJam(missile, jamRange, ecmThreshold))
+                    _jamSeconds += EvalInterval;
+                else
+                    _jamSeconds = 0f;
+
+                _level = _jamSeconds >= jamBreak ? RcLinkLevel.Lost : RcLinkLevel.Full;
+                return _level;
+            }
+
             bool anyAllyInRange = false;
             bool anyLos = false;
             TryScanAllies(missile, meshRange, ref anyAllyInRange, ref anyLos);
@@ -80,6 +93,35 @@ namespace MissileCameraRemoteControl.Control
                 _level = RcLinkLevel.Degraded;
 
             return _level;
+        }
+
+        private static bool TryOwnshipInMesh(Missile missile, float meshRange)
+        {
+            try
+            {
+                if (!GameManager.GetLocalAircraft(out Aircraft local) || local == null || local.disabled)
+                    return false;
+
+                FactionHQ? mHq = null;
+                try { mHq = missile.NetworkHQ; }
+                catch { return false; }
+                if (mHq == null)
+                    return false;
+
+                FactionHQ? aHq = null;
+                try { aHq = local.NetworkHQ; }
+                catch { return false; }
+                if (aHq == null || aHq != mHq)
+                    return false;
+
+                GlobalPosition missilePos = missile.GlobalPosition();
+                GlobalPosition acPos = local.GlobalPosition();
+                return FastMath.InRange(missilePos, acPos, meshRange);
+            }
+            catch
+            {
+                return false;
+            }
         }
 
         private static void TryScanAllies(
@@ -151,7 +193,7 @@ namespace MissileCameraRemoteControl.Control
                         if (TargetCalc.LineOfSight(missileTf, uTf, radius))
                         {
                             anyLos = true;
-                            return; // Full possible — early out
+                            return;
                         }
                     }
                     catch

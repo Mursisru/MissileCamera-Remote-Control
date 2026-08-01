@@ -34,20 +34,29 @@ namespace MissileCameraRemoteControl.Control
 
         private void Bootstrap()
         {
+            _harmony = new Harmony(RcPlugin.PluginGuid);
+
+            // PatchAll must not abort Motor/Seek — one bad attribute used to kill the whole chain.
             try
             {
-                _harmony = new Harmony(RcPlugin.PluginGuid);
                 _harmony.PatchAll(typeof(RcPlugin).Assembly);
+            }
+            catch (Exception ex)
+            {
+                _log?.LogError($"Harmony PatchAll failed (continuing critical patches): {ex.Message}");
+            }
+
+            try
+            {
                 PatchAllSeekerOverrides(_harmony);
                 PatchMotorThrust(_harmony);
                 HarmonyPatches.RcMissileCameraThrSnap.TryPatch(_harmony, _log);
                 HarmonyPatches.RcSteeringUprightPatch.TryPatch(_harmony, _log);
-                HarmonyPatches.RcMcFullscreenTogglePatch.TryPatch(_harmony, _log);
                 _log?.LogInfo("Harmony patched.");
             }
             catch (Exception ex)
             {
-                _log?.LogError($"Harmony patch failed: {ex}");
+                _log?.LogError($"Harmony critical patches failed: {ex}");
             }
 
             SceneManager.sceneLoaded += OnSceneLoaded;
@@ -62,7 +71,7 @@ namespace MissileCameraRemoteControl.Control
             System.Reflection.MethodInfo? thrust = Access.MissileAccess.MotorThrustMethod;
             if (thrust == null)
             {
-                RcPlugin.ModLogger?.LogWarning("Motor.Thrust not found — boost burn mult disabled.");
+                _log?.LogWarning("Motor.Thrust not found — afterburner disabled.");
                 return;
             }
 
@@ -70,6 +79,7 @@ namespace MissileCameraRemoteControl.Control
                 thrust,
                 prefix: new HarmonyMethod(typeof(HarmonyPatches.RcMotorThrustPatch), nameof(HarmonyPatches.RcMotorThrustPatch.Prefix)),
                 postfix: new HarmonyMethod(typeof(HarmonyPatches.RcMotorThrustPatch), nameof(HarmonyPatches.RcMotorThrustPatch.Postfix)));
+            _log?.LogInfo("Motor.Thrust patched (RC afterburner).");
         }
 
         private static void PatchAllSeekerOverrides(Harmony harmony)
@@ -189,8 +199,6 @@ namespace MissileCameraRemoteControl.Control
             {
                 Network.RcServerCompat.Tick();
                 Network.RcBoostStateSync.EnsureRegistered();
-                // MC may load after Awake — retry Toggle patch until reflection ready.
-                HarmonyPatches.RcMcFullscreenTogglePatch.TryPatch(_harmony!, _log);
 
                 GameState state = GameManager.gameState;
                 if (state != GameState.SinglePlayer && state != GameState.Multiplayer)

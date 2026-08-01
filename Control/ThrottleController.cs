@@ -9,12 +9,16 @@ namespace MissileCameraRemoteControl.Control
     /// <summary>
     /// Player throttle 0–1 → Missile.throttle (MissileCamera THR gauge).
     /// Afterburner multiplies Motor.Thrust only (does not inflate the gauge).
-    /// Degraded link: throttle locked at 1, boost blocked.
+    /// Lost link: throttle locked at 1, boost blocked.
+    /// Degraded: thr locked at 1, AB still allowed (optical LoS to own jet often fails in FS).
     /// </summary>
     internal static class ThrottleController
     {
         private const float RampPerSec = 2.85f;
         private const float TapStep = 0.1f;
+
+        /// <summary>Motor.topSpeed lift while AB held — vanilla skips AddForce at Vmax.</summary>
+        internal const float BoostTopSpeedFactor = 1.35f;
 
         private static readonly FieldInfo? ThrottleField =
             typeof(Missile).GetField("throttle", BindingFlags.Instance | BindingFlags.NonPublic)
@@ -53,7 +57,7 @@ namespace MissileCameraRemoteControl.Control
                 return;
 
             RcLinkLevel link = RcLinkQuality.Current;
-            if (link == RcLinkLevel.Degraded || link == RcLinkLevel.Lost)
+            if (link == RcLinkLevel.Lost)
             {
                 _throttle = 1f;
                 _boost = false;
@@ -65,15 +69,23 @@ namespace MissileCameraRemoteControl.Control
 
             _boost = KeybindPoll.IsHeld(RcConfig.Boost.Value);
 
-            if (KeybindPoll.IsDown(RcConfig.ThrottleUp.Value))
-                _throttle = Mathf.Clamp01(_throttle + TapStep);
-            else if (KeybindPoll.IsHeld(RcConfig.ThrottleUp.Value))
-                _throttle = Mathf.Clamp01(_throttle + RampPerSec * Time.unscaledDeltaTime);
+            if (link == RcLinkLevel.Degraded)
+            {
+                // Weak mesh: hold cruise thr, but keep AB authority.
+                _throttle = 1f;
+            }
+            else
+            {
+                if (KeybindPoll.IsDown(RcConfig.ThrottleUp.Value))
+                    _throttle = Mathf.Clamp01(_throttle + TapStep);
+                else if (KeybindPoll.IsHeld(RcConfig.ThrottleUp.Value))
+                    _throttle = Mathf.Clamp01(_throttle + RampPerSec * Time.unscaledDeltaTime);
 
-            if (KeybindPoll.IsDown(RcConfig.ThrottleDown.Value))
-                _throttle = Mathf.Clamp01(_throttle - TapStep);
-            else if (KeybindPoll.IsHeld(RcConfig.ThrottleDown.Value))
-                _throttle = Mathf.Clamp01(_throttle - RampPerSec * Time.unscaledDeltaTime);
+                if (KeybindPoll.IsDown(RcConfig.ThrottleDown.Value))
+                    _throttle = Mathf.Clamp01(_throttle - TapStep);
+                else if (KeybindPoll.IsHeld(RcConfig.ThrottleDown.Value))
+                    _throttle = Mathf.Clamp01(_throttle - RampPerSec * Time.unscaledDeltaTime);
+            }
 
             ApplyUiThrottle(missile);
             AfterburnerVfxBinder.SetBoost(missile, _boost);
@@ -84,44 +96,62 @@ namespace MissileCameraRemoteControl.Control
         {
             if (missile == null)
                 return;
-            if (RcLinkQuality.Current == RcLinkLevel.Degraded || RcLinkQuality.Current == RcLinkLevel.Lost)
+
+            RcLinkLevel link = RcLinkQuality.Current;
+            if (link == RcLinkLevel.Lost)
+            {
+                _boost = false;
                 _throttle = 1f;
+            }
+            else
+            {
+                // FixedUpdate can run before Update — re-poll AB for Motor.Thrust same frame.
+                _boost = KeybindPoll.IsHeld(RcConfig.Boost.Value);
+                if (link == RcLinkLevel.Degraded)
+                    _throttle = 1f;
+            }
+
             ApplyUiThrottle(missile);
         }
 
+        /// <summary>
+        /// Motor.Thrust Prefix — OwnsMissile so FixedUpdate still applies if FS flickers.
+        /// </summary>
         internal static bool TryGetMotorOverride(Missile missile, out float effectiveThrottle, out float burnMult)
         {
             effectiveThrottle = 1f;
             burnMult = 1f;
 
-            if (!RemoteControlSession.IsControlling(missile))
+            if (missile == null || !RemoteControlSession.OwnsMissile(missile))
                 return false;
 
             RcLinkLevel link = RcLinkQuality.Current;
-            if (link == RcLinkLevel.Degraded || link == RcLinkLevel.Lost)
+            if (link == RcLinkLevel.Lost)
             {
                 effectiveThrottle = 1f;
                 burnMult = 1f;
                 return true;
             }
 
+            float thr = link == RcLinkLevel.Degraded ? 1f : _throttle;
+
             if (_engine == RcEngineKind.Jet)
             {
                 effectiveThrottle = _boost
-                    ? Mathf.Max(0.01f, _throttle) * Mathf.Max(1f, RcConfig.JetBoostThrottle.Value)
-                    : _throttle;
-                burnMult = _boost ? RcConfig.JetBoostBurnMult.Value : 1f;
+                    ? Mathf.Max(0.01f, thr) * Mathf.Max(1f, RcConfig.JetBoostThrottle.Value)
+                    : thr;
+                burnMult = _boost ? Mathf.Max(0.01f, RcConfig.JetBoostBurnMult.Value) : 1f;
                 return true;
             }
 
             if (_boost)
             {
-                effectiveThrottle = Mathf.Max(0.01f, _throttle) * Mathf.Max(1f, RcConfig.SolidBoostThrottle.Value);
-                burnMult = RcConfig.SolidBoostBurnMult.Value;
+                effectiveThrottle = Mathf.Max(0.01f, thr) * Mathf.Max(1f, RcConfig.SolidBoostThrottle.Value);
+                burnMult = Mathf.Max(0.01f, RcConfig.SolidBoostBurnMult.Value);
                 return true;
             }
 
-            effectiveThrottle = _throttle;
+            effectiveThrottle = thr;
             burnMult = 1f;
             return true;
         }

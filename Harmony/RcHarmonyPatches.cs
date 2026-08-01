@@ -170,17 +170,24 @@ namespace MissileCameraRemoteControl.HarmonyPatches
         }
     }
 
+    /// <summary>
+    /// RC afterburner: raise Motor.Thrust throttle + burnRate, and lift Motor.topSpeed
+    /// (vanilla skips AddForce when speed &gt;= topSpeed — AB felt dead at cruise Vmax).
+    /// </summary>
     internal static class RcMotorThrustPatch
     {
+        private static float _savedBurn = -1f;
+        private static float _savedTop = -1f;
+
         public static void Prefix(
+            object __instance,
             Missile missile,
             bool localSim,
             Vector3 inputs,
-            ref float throttle,
-            object __instance,
-            out float __state)
+            ref float throttle)
         {
-            __state = -1f;
+            _savedBurn = -1f;
+            _savedTop = -1f;
             try
             {
                 if (missile == null || __instance == null)
@@ -194,8 +201,18 @@ namespace MissileCameraRemoteControl.HarmonyPatches
                     && MissileAccess.TryGetBurnRate(__instance, out float baseRate)
                     && baseRate > 0f)
                 {
-                    __state = baseRate;
+                    _savedBurn = baseRate;
                     MissileAccess.TrySetBurnRate(__instance, baseRate * burnMult);
+                }
+
+                // Lift Vmax while boosting so AddForce still runs past cruise topSpeed.
+                if (ThrottleController.BoostActive
+                    && MissileAccess.TryGetTopSpeed(__instance, out float top)
+                    && top > 1f
+                    && top < 1e8f)
+                {
+                    _savedTop = top;
+                    MissileAccess.TrySetTopSpeed(__instance, top * ThrottleController.BoostTopSpeedFactor);
                 }
             }
             catch
@@ -204,17 +221,25 @@ namespace MissileCameraRemoteControl.HarmonyPatches
             }
         }
 
-        public static void Postfix(object __instance, float __state)
+        public static void Postfix(object __instance)
         {
-            if (__state < 0f || __instance == null)
+            if (__instance == null)
                 return;
             try
             {
-                MissileAccess.TrySetBurnRate(__instance, __state);
+                if (_savedBurn >= 0f)
+                    MissileAccess.TrySetBurnRate(__instance, _savedBurn);
+                if (_savedTop >= 0f)
+                    MissileAccess.TrySetTopSpeed(__instance, _savedTop);
             }
             catch
             {
                 // ignore
+            }
+            finally
+            {
+                _savedBurn = -1f;
+                _savedTop = -1f;
             }
         }
     }

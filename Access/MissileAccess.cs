@@ -20,6 +20,9 @@ namespace MissileCameraRemoteControl.Access
         private static readonly FieldInfo? BurnRateField =
             MotorType?.GetField("burnRate", BindingFlags.Instance | BindingFlags.NonPublic);
 
+        private static readonly FieldInfo? TopSpeedField =
+            MotorType?.GetField("topSpeed", BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic);
+
         private static readonly FieldInfo? ParticleSystemsField =
             MotorType?.GetField("particleSystems", BindingFlags.Instance | BindingFlags.NonPublic);
 
@@ -86,6 +89,37 @@ namespace MissileCameraRemoteControl.Access
             try
             {
                 BurnRateField.SetValue(motor, burnRate);
+                return true;
+            }
+            catch
+            {
+                return false;
+            }
+        }
+
+        internal static bool TryGetTopSpeed(object motor, out float topSpeed)
+        {
+            topSpeed = 0f;
+            if (motor == null || TopSpeedField == null)
+                return false;
+            try
+            {
+                topSpeed = (float)TopSpeedField.GetValue(motor)!;
+                return true;
+            }
+            catch
+            {
+                return false;
+            }
+        }
+
+        internal static bool TrySetTopSpeed(object motor, float topSpeed)
+        {
+            if (motor == null || TopSpeedField == null)
+                return false;
+            try
+            {
+                TopSpeedField.SetValue(motor, topSpeed);
                 return true;
             }
             catch
