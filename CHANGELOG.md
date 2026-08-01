@@ -2,6 +2,17 @@
 
 All notable changes to **MissileCamera: Remote Control** are documented in this file.
 
+## [0.0.1] - 2026-08-01
+
+### Changed
+
+- FS aim stays **world-space** (War Thunder style): mouse rotates a stable world aim direction; missile/camera turn slides the reticle on FLIR. Own `FsAimReticle` kept alongside MissileCamera intercept ring.
+
+### Fixed
+
+- Aim/reticle pose lag: project and write `SetAimpoint` after `MissileCameraRig.SyncPose` so the marker matches the FLIR frame (not one pose behind).
+- RC proximity fly-by airburst: clear `proxyFuse` while controlling so CPA proxy cannot Detonate mid-pass; impact fuse unchanged.
+
 ## [0.0.0] - 2026-08-01
 
 ### Added

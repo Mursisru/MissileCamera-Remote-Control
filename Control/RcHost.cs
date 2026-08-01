@@ -52,6 +52,7 @@ namespace MissileCameraRemoteControl.Control
                 PatchMotorThrust(_harmony);
                 HarmonyPatches.RcMissileCameraThrSnap.TryPatch(_harmony, _log);
                 HarmonyPatches.RcSteeringUprightPatch.TryPatch(_harmony, _log);
+                HarmonyPatches.RcFeedPoseReticlePatch.TryPatch(_harmony, _log);
                 _log?.LogInfo("Harmony patched.");
             }
             catch (Exception ex)
@@ -221,6 +222,12 @@ namespace MissileCameraRemoteControl.Control
             {
                 _log?.LogWarning($"RC tick error: {ex.Message}");
             }
+        }
+
+        private void LateUpdate()
+        {
+            // Intentionally empty: aim/reticle only after MC SyncPose (EOF).
+            // LateUpdate here ran BEFORE SyncPose and baked a boresight offset into aimDir.
         }
 
         private void FixedUpdate()
