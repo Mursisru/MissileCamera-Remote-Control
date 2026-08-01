@@ -5,8 +5,8 @@ using MissileCameraRemoteControl.Control;
 namespace MissileCameraRemoteControl.HarmonyPatches
 {
     /// <summary>
-    /// Before Steering: reinforce RC aimpoint (after Seek in ServerFixedUpdate).
-    /// Upright assist stays inert.
+    /// Before Steering: only suppress cruise terminal/guidance.
+    /// Aim is written solely in MouseGuidance Update (no Fixed reinforce — dual SetAimpoint caused frequent jerks).
     /// </summary>
     internal static class RcSteeringUprightPatch
     {
@@ -19,7 +19,7 @@ namespace MissileCameraRemoteControl.HarmonyPatches
                     BindingFlags.Instance | BindingFlags.NonPublic | BindingFlags.Public);
                 if (steering == null)
                 {
-                    log?.LogWarning("Missile.Steering not found — aim reinforce disabled.");
+                    log?.LogWarning("Missile.Steering not found — seeker suppress hook skipped.");
                     return;
                 }
 
@@ -27,7 +27,7 @@ namespace MissileCameraRemoteControl.HarmonyPatches
                     steering,
                     prefix: new HarmonyMethod(typeof(RcSteeringUprightPatch), nameof(Prefix)),
                     postfix: new HarmonyMethod(typeof(RcSteeringUprightPatch), nameof(Postfix)));
-                log?.LogInfo("Missile.Steering RC aim reinforce patched.");
+                log?.LogInfo("Missile.Steering RC suppress patched.");
             }
             catch (System.Exception ex)
             {
@@ -41,9 +41,7 @@ namespace MissileCameraRemoteControl.HarmonyPatches
                 return;
             if (!RemoteControlSession.OwnsMissile(__instance))
                 return;
-            // Same FixedUpdate as Seek: kill terminal/guidance then rewrite aim after any leak.
             RcSeekerSuppress.Tick(__instance);
-            MouseGuidanceController.ReinforceAimpoint(__instance);
         }
 
         private static void Postfix(Missile __instance)

@@ -199,6 +199,9 @@ namespace MissileCameraRemoteControl.Cloning
             foreach (Weapon w in mountPrefab.GetComponentsInChildren<Weapon>(true))
                 MissileAccess.SetWeaponInfo(w, infoClone);
 
+            // Initialize() resets costPerRound from shared prefab definition.value — markup after that.
+            ApplyCostMarkup(original, infoClone, mountClone);
+
             string baseName = !string.IsNullOrEmpty(infoClone.weaponName)
                 ? infoClone.weaponName
                 : original.info.weaponName;
@@ -208,6 +211,40 @@ namespace MissileCameraRemoteControl.Cloning
                 : baseName;
 
             return mountClone;
+        }
+
+        /// <summary>RC munitions cost 10% more than the stock mount (rack + per-round).</summary>
+        private const float CostMarkup = 1.1f;
+
+        private static void ApplyCostMarkup(WeaponMount original, WeaponInfo infoClone, WeaponMount mountClone)
+        {
+            if (original == null || infoClone == null || mountClone == null)
+                return;
+
+            float baseRound = 0f;
+            try
+            {
+                if (original.info != null)
+                    baseRound = original.info.costPerRound;
+            }
+            catch
+            {
+                baseRound = 0f;
+            }
+
+            if (baseRound <= 0f)
+                baseRound = infoClone.costPerRound;
+
+            try
+            {
+                infoClone.SetCostPerRound(baseRound * CostMarkup);
+            }
+            catch
+            {
+                infoClone.costPerRound = baseRound * CostMarkup;
+            }
+
+            mountClone.emptyCost = original.emptyCost * CostMarkup;
         }
     }
 }

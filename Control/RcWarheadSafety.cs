@@ -5,21 +5,48 @@ namespace MissileCameraRemoteControl.Control
 {
     /// <summary>
     /// Skipping seeker.Seek() under RC also skips Arm / SetTangible / DeployFins / proxy setup.
-    /// Without those, impacts fizzle (no blast) and unit collisions may never register.
+    /// DeployFins / Arm / Tangible are one-shot — spam DeployFins every frame re-fires RpcUnfoldFins
+    /// (~1s fold animation) and is a prime suspect for periodic aero jerks.
     /// </summary>
     internal static class RcWarheadSafety
     {
         private const float FinDelay = 0.5f;
         private const float TangibleDelay = 1.5f;
         private const float ArmDelay = 2f;
+        private const float ProxyInterval = 0.25f;
 
         private static readonly FieldInfo? TargetField =
             typeof(Missile).GetField("target", BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic);
+
+        private static int _missileId;
+        private static bool _finsDone;
+        private static bool _tangibleDone;
+        private static bool _armDone;
+        private static float _nextProxyTime;
+
+        internal static void Reset()
+        {
+            _missileId = 0;
+            _finsDone = false;
+            _tangibleDone = false;
+            _armDone = false;
+            _nextProxyTime = 0f;
+        }
 
         internal static void Tick(Missile missile)
         {
             if (missile == null || missile.disabled)
                 return;
+
+            int id = missile.GetInstanceID();
+            if (id != _missileId)
+            {
+                _missileId = id;
+                _finsDone = false;
+                _tangibleDone = false;
+                _armDone = false;
+                _nextProxyTime = 0f;
+            }
 
             float age = 0f;
             try
@@ -31,37 +58,51 @@ namespace MissileCameraRemoteControl.Control
                 return;
             }
 
-            try
+            if (!_finsDone && age > FinDelay)
             {
-                if (age > FinDelay)
+                try
+                {
                     missile.DeployFins();
-            }
-            catch
-            {
-                // ignore
-            }
-
-            try
-            {
-                if (age > TangibleDelay && !missile.IsTangible())
-                    missile.SetTangible(true);
-            }
-            catch
-            {
-                // ignore
+                    _finsDone = true;
+                }
+                catch
+                {
+                    // retry next tick
+                }
             }
 
-            try
+            if (!_tangibleDone && age > TangibleDelay)
             {
-                if (age > ArmDelay && !missile.IsArmed())
-                    missile.Arm();
-            }
-            catch
-            {
-                // ignore
+                try
+                {
+                    if (!missile.IsTangible())
+                        missile.SetTangible(true);
+                    _tangibleDone = true;
+                }
+                catch
+                {
+                    // retry
+                }
             }
 
-            // Proximity fuse needs a target transform — normally set inside Seek().
+            if (!_armDone && age > ArmDelay)
+            {
+                try
+                {
+                    if (!missile.IsArmed())
+                        missile.Arm();
+                    _armDone = true;
+                }
+                catch
+                {
+                    // retry
+                }
+            }
+
+            if (Time.unscaledTime < _nextProxyTime)
+                return;
+            _nextProxyTime = Time.unscaledTime + ProxyInterval;
+
             try
             {
                 Unit? target = TargetField?.GetValue(missile) as Unit;

@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Generic;
 using MissileCameraRemoteControl.Config;
 
@@ -9,8 +10,11 @@ namespace MissileCameraRemoteControl.Cloning
         private static readonly Dictionary<WeaponMount, WeaponMount> OriginalToClone =
             new Dictionary<WeaponMount, WeaponMount>();
 
+        private static readonly Dictionary<string, WeaponMount> CloneByOriginalKey =
+            new Dictionary<string, WeaponMount>(StringComparer.Ordinal);
+
         private static readonly Dictionary<string, WeaponMount> CloneByKey =
-            new Dictionary<string, WeaponMount>();
+            new Dictionary<string, WeaponMount>(StringComparer.Ordinal);
 
         private static readonly Dictionary<WeaponMount, RcGuidanceKind> GuidanceByClone =
             new Dictionary<WeaponMount, RcGuidanceKind>();
@@ -23,6 +27,7 @@ namespace MissileCameraRemoteControl.Cloning
         internal static void Clear()
         {
             OriginalToClone.Clear();
+            CloneByOriginalKey.Clear();
             CloneByKey.Clear();
             GuidanceByClone.Clear();
             EngineByClone.Clear();
@@ -37,6 +42,8 @@ namespace MissileCameraRemoteControl.Cloning
             if (original == null || clone == null)
                 return;
             OriginalToClone[original] = clone;
+            if (!string.IsNullOrEmpty(original.jsonKey))
+                CloneByOriginalKey[original.jsonKey] = clone;
             if (!string.IsNullOrEmpty(clone.jsonKey))
                 CloneByKey[clone.jsonKey] = clone;
             GuidanceByClone[clone] = guidance;
@@ -46,6 +53,26 @@ namespace MissileCameraRemoteControl.Cloning
         internal static bool TryGetClone(WeaponMount original, out WeaponMount? clone)
         {
             return OriginalToClone.TryGetValue(original, out clone);
+        }
+
+        /// <summary>Resolve RC clone by mount ref or original jsonKey (AI StandardLoadout safety).</summary>
+        internal static bool TryResolveClone(WeaponMount? original, out WeaponMount? clone)
+        {
+            clone = null;
+            if (original == null)
+                return false;
+
+            if (OriginalToClone.TryGetValue(original, out clone) && clone != null)
+                return true;
+
+            string? key = null;
+            try { key = original.jsonKey; }
+            catch { return false; }
+
+            if (string.IsNullOrEmpty(key) || CloneProfile.IsRcCloneKey(key))
+                return false;
+
+            return CloneByOriginalKey.TryGetValue(key!, out clone) && clone != null;
         }
 
         internal static bool TryGetProfile(WeaponMount clone, out RcGuidanceKind guidance, out RcEngineKind engine)

@@ -66,17 +66,7 @@ namespace MissileCameraRemoteControl.Control
             ProjectReticleStable(feed, mt, worldAimPoint);
         }
 
-        /// <summary>
-        /// Called from Steering Prefix — same FixedUpdate as Seek, after Seek.
-        /// Overwrites any leaked terminal SetAimpoint before Steering reads aimPoint.
-        /// </summary>
-        internal static void ReinforceAimpoint(Missile missile)
-        {
-            if (missile == null || missile.disabled || !_initialized)
-                return;
-            float dist = Mathf.Max(200f, RcConfig.AimDistance.Value);
-            WriteAimpoint(missile, dist, missile.transform);
-        }
+        // Aim only in Update — Fixed reinforce removed (dual SetAimpoint → frequent jerks).
 
         private static Vector3 WriteAimpoint(Missile missile, float dist, Transform mt)
         {

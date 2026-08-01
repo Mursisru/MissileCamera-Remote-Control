@@ -58,6 +58,7 @@ namespace MissileCameraRemoteControl.Control
             MouseGuidanceController.Reset();
             ThrottleController.Reset();
             RcLinkQuality.Reset();
+            RcWarheadSafety.Reset();
             RcUprightAssist.ResetSaved();
             if (restoreTargets)
                 RcAircraftTargetSnapshot.Restore();
@@ -108,9 +109,11 @@ namespace MissileCameraRemoteControl.Control
             RcAircraftTargetSnapshot.Capture();
             ThrottleController.OnTakeControl(missile);
             RcUprightAssist.OnTakeControl(missile);
+            RcWarheadSafety.Reset();
             RcSeekerSuppress.Tick(missile);
             RcWarheadSafety.Tick(missile);
             RcLinkQuality.Evaluate(missile);
+            RcSpectatorEngage.MaintainFollow(missile);
             RcPlugin.ModLogger?.LogInfo($"RC engaged (FS): {missile.name}");
         }
 
@@ -141,6 +144,9 @@ namespace MissileCameraRemoteControl.Control
 
             RcMissilePickerUi.Tick();
 
+            // Spectator / HUD-selected allied RC → K enters FS + Take (before T toggle).
+            RcSpectatorEngage.Tick();
+
             if (KeybindPoll.IsDown(RcConfig.ToggleControl.Value) && !RcMissilePickerUi.IsOpen)
                 ToggleNearest();
 
@@ -149,6 +155,9 @@ namespace MissileCameraRemoteControl.Control
 
             // Lost: keep stick (thr like Degraded). Auto-Release handed aim to Seek near jam/targets.
             RcLinkQuality.Evaluate(_controlled);
+
+            // Spectator / no-ownship: MC may clear OwnedActive — keep feed on controlled missile.
+            RcSpectatorEngage.MaintainFollow(_controlled);
 
             RcSeekerSuppress.Tick(_controlled);
             RcWarheadSafety.Tick(_controlled);

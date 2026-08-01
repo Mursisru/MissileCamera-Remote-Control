@@ -6,6 +6,7 @@ namespace MissileCameraRemoteControl.Config
     internal static class RcConfig
     {
         internal static ConfigEntry<bool> Enabled { get; private set; } = null!;
+        internal static ConfigEntry<bool> AiEquipRcClones { get; private set; } = null!;
         internal static ConfigEntry<float> MouseSensitivity { get; private set; } = null!;
         internal static ConfigEntry<float> AimDistance { get; private set; } = null!;
         internal static ConfigEntry<float> JetBoostThrottle { get; private set; } = null!;
@@ -31,6 +32,8 @@ namespace MissileCameraRemoteControl.Config
         internal static void Bind(ConfigFile config)
         {
             Enabled = config.Bind("General", "Enabled", true, "Master enable for Remote Control.");
+            AiEquipRcClones = config.Bind("General", "AiEquipRcClones", true,
+                "AI aircraft equip RC (DL/SATCOM) clones instead of vanilla whitelist mounts. Bots do not remote-pilot — Seek runs normally.");
             MouseSensitivity = config.Bind("Control", "MouseSensitivity", 0.08f,
                 "Mouse aim rate for world-space WT reticle (lower = smoother).");
             AimDistance = config.Bind("Control", "AimDistance", 4000f,

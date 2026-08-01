@@ -42,6 +42,7 @@ namespace MissileCameraRemoteControl.Control
                 PatchMotorThrust(_harmony);
                 HarmonyPatches.RcMissileCameraThrSnap.TryPatch(_harmony, _log);
                 HarmonyPatches.RcSteeringUprightPatch.TryPatch(_harmony, _log);
+                HarmonyPatches.RcMcFullscreenTogglePatch.TryPatch(_harmony, _log);
                 _log?.LogInfo("Harmony patched.");
             }
             catch (Exception ex)
@@ -188,6 +189,8 @@ namespace MissileCameraRemoteControl.Control
             {
                 Network.RcServerCompat.Tick();
                 Network.RcBoostStateSync.EnsureRegistered();
+                // MC may load after Awake — retry Toggle patch until reflection ready.
+                HarmonyPatches.RcMcFullscreenTogglePatch.TryPatch(_harmony!, _log);
 
                 GameState state = GameManager.gameState;
                 if (state != GameState.SinglePlayer && state != GameState.Multiplayer)
