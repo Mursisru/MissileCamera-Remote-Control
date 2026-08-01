@@ -71,6 +71,7 @@ namespace MissileCameraRemoteControl.Cloning
 
                 // Same network prefab as vanilla — required for Mirage RegisterPrefab / encyclopedia spawn.
                 defClone.unitPrefab = srcDef.unitPrefab;
+                RcCostMarkup.EnsureDefinition(defClone, srcDef);
 
                 // Ensure not disabled.
                 try

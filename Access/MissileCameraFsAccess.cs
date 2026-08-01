@@ -15,6 +15,7 @@ namespace MissileCameraRemoteControl.Access
         private static PropertyInfo? _fsIsActive;
         private static MethodInfo? _tryGetFeedCamera;
         private static MethodInfo? _tryGetPanelRt;
+        private static MethodInfo? _exitIfActive;
         private static PropertyInfo? _fsViewRt;
         private static PropertyInfo? _fsHud;
 
@@ -48,6 +49,22 @@ namespace MissileCameraRemoteControl.Access
             catch
             {
                 return null;
+            }
+        }
+
+        /// <summary>Force-close MissileCamera Fullscreen if active (ownship death / wipe).</summary>
+        internal static void TryExitFullscreen()
+        {
+            EnsureResolved();
+            if (_exitIfActive == null)
+                return;
+            try
+            {
+                _exitIfActive.Invoke(null, null);
+            }
+            catch
+            {
+                // ignore
             }
         }
 
@@ -132,6 +149,12 @@ namespace MissileCameraRemoteControl.Access
 
                 Type? fs = mc.GetType("MissileCamera.MissileCameraFullscreenController");
                 _fsIsActive = fs?.GetProperty("IsActive", BindingFlags.Static | BindingFlags.NonPublic | BindingFlags.Public);
+                _exitIfActive = fs?.GetMethod(
+                    "ExitIfActive",
+                    BindingFlags.Static | BindingFlags.NonPublic | BindingFlags.Public,
+                    null,
+                    Type.EmptyTypes,
+                    null);
 
                 Type? feed = mc.GetType("MissileCamera.MissileCameraFeedController");
                 _tryGetFeedCamera = feed?.GetMethod(

@@ -10,6 +10,9 @@ namespace MissileCameraRemoteControl.Cloning
         private static readonly Dictionary<WeaponMount, WeaponMount> OriginalToClone =
             new Dictionary<WeaponMount, WeaponMount>();
 
+        private static readonly Dictionary<WeaponMount, WeaponMount> CloneToOriginal =
+            new Dictionary<WeaponMount, WeaponMount>();
+
         private static readonly Dictionary<string, WeaponMount> CloneByOriginalKey =
             new Dictionary<string, WeaponMount>(StringComparer.Ordinal);
 
@@ -27,6 +30,7 @@ namespace MissileCameraRemoteControl.Cloning
         internal static void Clear()
         {
             OriginalToClone.Clear();
+            CloneToOriginal.Clear();
             CloneByOriginalKey.Clear();
             CloneByKey.Clear();
             GuidanceByClone.Clear();
@@ -42,6 +46,7 @@ namespace MissileCameraRemoteControl.Cloning
             if (original == null || clone == null)
                 return;
             OriginalToClone[original] = clone;
+            CloneToOriginal[clone] = original;
             if (!string.IsNullOrEmpty(original.jsonKey))
                 CloneByOriginalKey[original.jsonKey] = clone;
             if (!string.IsNullOrEmpty(clone.jsonKey))
@@ -49,6 +54,9 @@ namespace MissileCameraRemoteControl.Cloning
             GuidanceByClone[clone] = guidance;
             EngineByClone[clone] = engine;
         }
+
+        internal static bool TryGetOriginal(WeaponMount clone, out WeaponMount? original) =>
+            CloneToOriginal.TryGetValue(clone, out original) && original != null;
 
         internal static bool TryGetClone(WeaponMount original, out WeaponMount? clone)
         {

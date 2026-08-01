@@ -145,6 +145,7 @@ namespace MissileCameraRemoteControl.Control
             AfterburnerVfxBinder.ClearCache();
             FsAimReticle.DestroyUi();
             RcMissilePickerUi.DestroyUi();
+            RcFsOwnshipGuard.Reset();
             Network.RcBoostStateSync.Reset();
             Network.RcServerCompat.Reset();
             _log?.LogInfo($"RC hard reset ({reason}).");
@@ -217,6 +218,7 @@ namespace MissileCameraRemoteControl.Control
                 }
 
                 RemoteControlSession.Tick();
+                RcFsOwnshipGuard.Tick();
             }
             catch (Exception ex)
             {

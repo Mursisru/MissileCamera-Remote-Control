@@ -2,6 +2,16 @@
 
 All notable changes to **MissileCamera: Remote Control** are documented in this file.
 
+## [0.0.2] - 2026-08-01
+
+### Added
+
+- Auto-exit MissileCamera Fullscreen when the local player aircraft tracked under FS is destroyed (spectator FS without ownship unchanged).
+
+### Fixed
+
+- RC +10% munition cost wiped by `WeaponMount.Initialize` (shared vanilla `definition.value`). Re-apply via `RcCostMarkup` + Harmony postfix; encyclopedia missile `value` also marked up.
+
 ## [0.0.1] - 2026-08-01
 
 ### Changed
