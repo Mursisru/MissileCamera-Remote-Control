@@ -51,6 +51,8 @@ namespace MissileCameraRemoteControl.Access
                 return;
             try
             {
+                if (ProxyFuseField.GetValue(missile) == null)
+                    return;
                 ProxyFuseField.SetValue(missile, null);
             }
             catch

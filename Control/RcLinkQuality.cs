@@ -18,6 +18,7 @@ namespace MissileCameraRemoteControl.Control
         private static RcLinkLevel _level = RcLinkLevel.Full;
         private static float _jamSeconds;
         private static int _lastMissileId;
+        private static bool _satcomCached;
 
         internal static RcLinkLevel Current => _level;
 
@@ -27,6 +28,7 @@ namespace MissileCameraRemoteControl.Control
             _jamSeconds = 0f;
             _nextEval = 0f;
             _lastMissileId = 0;
+            _satcomCached = false;
         }
 
         internal static RcLinkLevel Evaluate(Missile missile)
@@ -43,15 +45,15 @@ namespace MissileCameraRemoteControl.Control
                 _lastMissileId = id;
                 _jamSeconds = 0f;
                 _nextEval = 0f;
+                RcMissileTag? tag = missile.GetComponent<RcMissileTag>();
+                _satcomCached = tag != null && tag.Guidance == RcGuidanceKind.Satcom;
             }
 
             if (Time.unscaledTime < _nextEval)
                 return _level;
             _nextEval = Time.unscaledTime + EvalInterval;
 
-            RcMissileTag? tag = missile.GetComponent<RcMissileTag>();
-            bool satcom = tag != null && tag.Guidance == RcGuidanceKind.Satcom;
-            if (satcom)
+            if (_satcomCached)
             {
                 _jamSeconds = 0f;
                 _level = RcLinkLevel.Full;

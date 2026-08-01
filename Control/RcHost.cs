@@ -63,6 +63,7 @@ namespace MissileCameraRemoteControl.Control
             SceneManager.sceneLoaded += OnSceneLoaded;
             SceneManager.sceneUnloaded += OnSceneUnloaded;
             _nextBootstrapAttempt = 0f;
+            Access.MissileCameraFsAccess.TryResolveNow();
             TryBootstrapClones("plugin_awake");
             Network.RcBoostStateSync.EnsureRegistered();
         }
@@ -125,6 +126,8 @@ namespace MissileCameraRemoteControl.Control
 
         private void OnSceneLoaded(Scene scene, LoadSceneMode mode)
         {
+            Access.MissileCameraFsAccess.TryResolveNow();
+            Network.RcBoostStateSync.EnsureRegistered();
             TryBootstrapClones("scene_loaded:" + scene.name);
         }
 
@@ -199,8 +202,8 @@ namespace MissileCameraRemoteControl.Control
 
             try
             {
+                Access.RcFrameCache.BeginFrame();
                 Network.RcServerCompat.Tick();
-                Network.RcBoostStateSync.EnsureRegistered();
 
                 GameState state = GameManager.gameState;
                 if (state != GameState.SinglePlayer && state != GameState.Multiplayer)

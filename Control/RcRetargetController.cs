@@ -24,6 +24,12 @@ namespace MissileCameraRemoteControl.Control
         private static MethodInfo? _timedPressUp3;
         private static MethodInfo? _timedPressDown2;
         private static bool _inputMethodsResolved;
+        private static PropertyInfo? _playerInputProp;
+        private static FieldInfo? _playerInputField;
+        private static bool _playerInputResolved;
+        private static object? _boundInput;
+        private static System.Func<string, float, float, bool>? _timedPressUpDel;
+        private static System.Func<string, float, bool>? _timedPressDownDel;
 
         /// <summary>Harmony: swallow vanilla HUD TargetSelect while RC owns Select.</summary>
         internal static bool BlockVanillaTargetSelect => RemoteControlSession.IsActive;
@@ -75,16 +81,20 @@ namespace MissileCameraRemoteControl.Control
         {
             try
             {
-                PropertyInfo? prop = typeof(GameManager).GetProperty(
-                    "playerInput",
-                    BindingFlags.Static | BindingFlags.Public | BindingFlags.NonPublic);
-                if (prop != null)
-                    return prop.GetValue(null);
+                if (!_playerInputResolved)
+                {
+                    _playerInputResolved = true;
+                    _playerInputProp = typeof(GameManager).GetProperty(
+                        "playerInput",
+                        BindingFlags.Static | BindingFlags.Public | BindingFlags.NonPublic);
+                    _playerInputField = typeof(GameManager).GetField(
+                        "playerInput",
+                        BindingFlags.Static | BindingFlags.Public | BindingFlags.NonPublic);
+                }
 
-                FieldInfo? field = typeof(GameManager).GetField(
-                    "playerInput",
-                    BindingFlags.Static | BindingFlags.Public | BindingFlags.NonPublic);
-                return field?.GetValue(null);
+                if (_playerInputProp != null)
+                    return _playerInputProp.GetValue(null);
+                return _playerInputField?.GetValue(null);
             }
             catch
             {
@@ -94,50 +104,74 @@ namespace MissileCameraRemoteControl.Control
 
         private static void EnsureInputMethods(object input)
         {
-            if (_inputMethodsResolved)
+            if (!_inputMethodsResolved)
+            {
+                _inputMethodsResolved = true;
+                System.Type t = input.GetType();
+                _timedPressUp3 = t.GetMethod(
+                    "GetButtonTimedPressUp",
+                    BindingFlags.Instance | BindingFlags.Public,
+                    null,
+                    new[] { typeof(string), typeof(float), typeof(float) },
+                    null);
+                _timedPressDown2 = t.GetMethod(
+                    "GetButtonTimedPressDown",
+                    BindingFlags.Instance | BindingFlags.Public,
+                    null,
+                    new[] { typeof(string), typeof(float) },
+                    null);
+            }
+
+            if (ReferenceEquals(_boundInput, input) && _timedPressUpDel != null)
                 return;
-            _inputMethodsResolved = true;
-            System.Type t = input.GetType();
-            _timedPressUp3 = t.GetMethod(
-                "GetButtonTimedPressUp",
-                BindingFlags.Instance | BindingFlags.Public,
-                null,
-                new[] { typeof(string), typeof(float), typeof(float) },
-                null);
-            _timedPressDown2 = t.GetMethod(
-                "GetButtonTimedPressDown",
-                BindingFlags.Instance | BindingFlags.Public,
-                null,
-                new[] { typeof(string), typeof(float) },
-                null);
+
+            _boundInput = input;
+            _timedPressUpDel = null;
+            _timedPressDownDel = null;
+            try
+            {
+                if (_timedPressUp3 != null)
+                    _timedPressUpDel = (System.Func<string, float, float, bool>)
+                        System.Delegate.CreateDelegate(typeof(System.Func<string, float, float, bool>), input, _timedPressUp3);
+                if (_timedPressDown2 != null)
+                    _timedPressDownDel = (System.Func<string, float, bool>)
+                        System.Delegate.CreateDelegate(typeof(System.Func<string, float, bool>), input, _timedPressDown2);
+            }
+            catch
+            {
+                _timedPressUpDel = null;
+                _timedPressDownDel = null;
+            }
         }
 
         private static bool InvokeTimedPressUp(object input, string action, float min, float max)
         {
-            if (_timedPressUp3 == null)
-                return false;
             try
             {
-                return (bool)_timedPressUp3.Invoke(input, new object[] { action, min, max })!;
+                if (_timedPressUpDel != null)
+                    return _timedPressUpDel(action, min, max);
             }
             catch
             {
-                return false;
+                // fall through
             }
+
+            return false;
         }
 
         private static bool InvokeTimedPressDown(object input, string action, float time)
         {
-            if (_timedPressDown2 == null)
-                return false;
             try
             {
-                return (bool)_timedPressDown2.Invoke(input, new object[] { action, time })!;
+                if (_timedPressDownDel != null)
+                    return _timedPressDownDel(action, time);
             }
             catch
             {
-                return false;
+                // fall through
             }
+
+            return false;
         }
 
         internal static void ClearMissileTarget(Missile missile)

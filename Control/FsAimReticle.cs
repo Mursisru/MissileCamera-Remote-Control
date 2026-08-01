@@ -20,16 +20,22 @@ namespace MissileCameraRemoteControl.Control
 
         internal static void SetVisible(bool visible)
         {
+            if (_visible == visible && _root != null && _root.activeSelf == visible)
+            {
+                _visible = visible;
+                return;
+            }
+
             _visible = visible;
             if (!visible)
             {
-                if (_root != null)
+                if (_root != null && _root.activeSelf)
                     _root.SetActive(false);
                 return;
             }
 
             EnsureUi();
-            if (_root != null)
+            if (_root != null && !_root.activeSelf)
                 _root.SetActive(true);
         }
 

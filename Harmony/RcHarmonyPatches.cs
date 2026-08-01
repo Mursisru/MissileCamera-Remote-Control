@@ -111,6 +111,7 @@ namespace MissileCameraRemoteControl.HarmonyPatches
         {
             RcMissileTag tag = missile.gameObject.AddComponent<RcMissileTag>();
             tag.Guidance = guidance;
+            tag.GuidanceLabel = GuidanceLabels.For(guidance);
             string bare = CloneProfile.StripLegacyPrefix(name);
             if (!CloneProfile.TryResolveEngineFromWeaponName(bare, out tag.Engine))
                 tag.Engine = RcEngineKind.Jet;
@@ -135,6 +136,10 @@ namespace MissileCameraRemoteControl.HarmonyPatches
 
         public static bool Prefix(MissileSeeker __instance)
         {
+            // Fast path: no RC session → never touch seeker fields (all missiles).
+            if (RemoteControlSession.Controlled == null)
+                return true;
+
             try
             {
                 if (__instance == null)
@@ -156,8 +161,8 @@ namespace MissileCameraRemoteControl.HarmonyPatches
                 if (missile == null)
                     return true;
 
-                // GitHub + harden: skip Seek for entire RC ownership (not only IsControlling/FS).
-                // Inside terminalRange cruise Seek enters TerminalMode and steals SetAimpoint every FixedUpdate.
+                // Skip Seek for RC ownership (not only IsControlling/FS).
+                // Inside terminalRange cruise Seek steals SetAimpoint every FixedUpdate.
                 if (RemoteControlSession.OwnsMissile(missile))
                     return false;
             }
@@ -331,7 +336,9 @@ namespace MissileCameraRemoteControl.HarmonyPatches
                 RcMissileTag? tag = __instance.GetComponent<RcMissileTag>();
                 if (tag != null)
                 {
-                    __result = GuidanceLabels.For(tag.Guidance);
+                    if (string.IsNullOrEmpty(tag.GuidanceLabel))
+                        tag.GuidanceLabel = GuidanceLabels.For(tag.Guidance);
+                    __result = tag.GuidanceLabel;
                     return;
                 }
 

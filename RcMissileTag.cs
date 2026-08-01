@@ -10,5 +10,7 @@ namespace MissileCameraRemoteControl
         internal RcEngineKind Engine;
         internal string BackupSeekerType = string.Empty;
         internal string SourceMountKey = string.Empty;
+        /// <summary>Cached DL/SATCOM string for GetSeekerType (avoid enum→string every UI poll).</summary>
+        internal string GuidanceLabel = string.Empty;
     }
 }

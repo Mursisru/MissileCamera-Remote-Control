@@ -29,6 +29,9 @@ namespace MissileCameraRemoteControl.Control
         private static readonly FieldInfo? UnitNameField =
             typeof(Unit).GetField("unitName", BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic);
 
+        private static readonly FieldInfo? MissileInfoField =
+            typeof(Missile).GetField("info", BindingFlags.Instance | BindingFlags.NonPublic);
+
         internal static void EnqueueFromWeapon(Weapon? weapon)
         {
             if (weapon == null || weapon.info == null)
@@ -141,14 +144,12 @@ namespace MissileCameraRemoteControl.Control
 
             try
             {
-                var infoField = typeof(Missile).GetField(
-                    "info",
-                    BindingFlags.Instance | BindingFlags.NonPublic);
-                infoField?.SetValue(missile, pending.Info);
+                MissileInfoField?.SetValue(missile, pending.Info);
 
                 RcMissileTag tag = missile.GetComponent<RcMissileTag>()
                     ?? missile.gameObject.AddComponent<RcMissileTag>();
                 tag.Guidance = pending.Guidance;
+                tag.GuidanceLabel = GuidanceLabels.For(pending.Guidance);
                 tag.Engine = pending.Engine;
                 tag.SourceMountKey = pending.SourceMountKey ?? string.Empty;
                 tag.BackupSeekerType = pending.BackupSeeker ?? string.Empty;

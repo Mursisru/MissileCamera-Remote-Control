@@ -6,8 +6,7 @@ namespace MissileCameraRemoteControl.Control
 {
     /// <summary>
     /// While RC: force cruise seeker into inert mid-course state.
-    /// If Seek ever leaks (Harmony miss / IsActive flicker), PreTerminal/Terminal must not run —
-    /// that is what steals the stick when lining up inside terminalRange (~2 km).
+    /// Write fields only when values differ (Steering prefix path).
     /// </summary>
     internal static class RcSeekerSuppress
     {
@@ -17,25 +16,49 @@ namespace MissileCameraRemoteControl.Control
         private static readonly FieldInfo? CruiseGuidance =
             typeof(OpticalSeekerCruiseMissile).GetField("guidance", BindingFlags.Instance | BindingFlags.NonPublic);
 
+        private static int _cachedMissileId;
+        private static OpticalSeekerCruiseMissile? _cachedCruise;
+
+        internal static void Reset()
+        {
+            _cachedMissileId = 0;
+            _cachedCruise = null;
+        }
+
         internal static void Tick(Missile missile)
         {
             if (missile == null || missile.disabled)
                 return;
 
-            MissileSeeker? seeker = MissileAccess.GetSeeker(missile) ?? missile.GetComponent<MissileSeeker>();
-            if (seeker is not OpticalSeekerCruiseMissile cruise)
+            OpticalSeekerCruiseMissile? cruise = ResolveCruise(missile);
+            if (cruise == null)
                 return;
 
             try
             {
-                CruiseTerminal?.SetValue(cruise, false);
-                // guidance=false → Seek early-outs before PreTerminal/Terminal SetAimpoint.
-                CruiseGuidance?.SetValue(cruise, false);
+                if (CruiseTerminal != null && CruiseTerminal.GetValue(cruise) is true)
+                    CruiseTerminal.SetValue(cruise, false);
+                if (CruiseGuidance != null && CruiseGuidance.GetValue(cruise) is true)
+                    CruiseGuidance.SetValue(cruise, false);
             }
             catch
             {
                 // ignore
             }
+        }
+
+        private static OpticalSeekerCruiseMissile? ResolveCruise(Missile missile)
+        {
+            int id = missile.GetInstanceID();
+            if (id == _cachedMissileId && _cachedCruise != null)
+                return _cachedCruise;
+
+            _cachedMissileId = id;
+            _cachedCruise = null;
+            MissileSeeker? seeker = MissileAccess.GetSeeker(missile) ?? missile.GetComponent<MissileSeeker>();
+            if (seeker is OpticalSeekerCruiseMissile cruise)
+                _cachedCruise = cruise;
+            return _cachedCruise;
         }
     }
 }

@@ -2,59 +2,87 @@
 
 [![Nuclear Option](https://img.shields.io/badge/Game-Nuclear%20Option-blue)](https://store.steampowered.com/app/2168680/Nuclear_Option/)
 [![BepInEx 5](https://img.shields.io/badge/Loader-BepInEx%205-orange)](https://docs.bepinex.dev/)
-[![Version](https://img.shields.io/badge/Version-0.0.2-green)](https://github.com/Mursisru/MissileCamera-Remote-Control)
+[![Version](https://img.shields.io/badge/Version-1.0.0-green)](https://github.com/Mursisru/MissileCamera-Remote-Control/releases/tag/1.0.0)
 [![Requires MissileCamera](https://img.shields.io/badge/Requires-MissileCamera-lightgrey)](https://github.com/Mursisru/MissileCamera)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
-BepInEx 5 addon for **Nuclear Option** that extends [MissileCamera](https://github.com/Mursisru/MissileCamera) with remote-control clone munitions (AGM-98D, ALM-D500, …), mouse guidance, and throttle / afterburner control.
+BepInEx 5 addon for **Nuclear Option**. Extends [MissileCamera](https://github.com/Mursisru/MissileCamera) with remote-control (RC) munition clones, fullscreen mouse guidance, throttle / afterburner, and datalink / SATCOM link rules.
 
-**Plugin GUID:** `com.at747.missilecamera.remotecontrol`
+**Plugin GUID:** `com.at747.missilecamera.remotecontrol`  
+**Hard dependency:** `com.at747.missilecamera.bepinex` (MissileCamera)
 
 ---
 
-## Critical warnings
+## Critical requirements
 
 > [!IMPORTANT]
-> **Requires MissileCamera** (`com.at747.missilecamera.bepinex`) and **BepInEx 5 (x64)**.
+> **Install MissileCamera first.** This addon will not load without it. Both plugins go in `BepInEx/plugins/`.
+
+> [!IMPORTANT]
+> **BepInEx 5 (x64)** is required. Use the same loader setup as MissileCamera.
 
 > [!WARNING]
-> Remote control is **host / single-player only** (`LocalSim`). Pure clients cannot steer missiles.
+> **Steering authority is host / single-player only** (`Server.Active` && `missile.LocalSim`). Pure multiplayer clients cannot pilot missiles.
 
 > [!IMPORTANT]
-> In multiplayer, if the **server does not run this addon**, Remote Control features are **temporarily disabled** on your client for that session (auto re-enabled when you leave). Hosts / servers with the addon stay enabled.
+> **Multiplayer presence:** if you join a server that does **not** run this addon, RC mounts and controls are **disabled for that session** (fail-closed). They return when you leave that server. Hosts / servers that include the addon stay enabled.
+
+> [!CAUTION]
+> Do not replace vanilla weapon assets. RC options are separate loadout entries. Removing the DLL mid-campaign may leave orphaned mount keys in saved loadouts.
+
+---
+
+## What it does
+
+- Whitelisted **DL** and **SATCOM** mount clones (unique display names, encyclopedia entries)
+- Injection only on hardpoints that already carry the stock weapon
+- **Fullscreen RC** via MissileCamera: War Thunder–style **world-space** mouse aim, stock aero / G-limits
+- Jet / solid **throttle** and **afterburner** (Motor thrust + VFX; gauge stays 0–1)
+- **Datalink quality** for DL (mesh range, LoS degrade, jam break); SATCOM stays full link
+- **Missile picker** in fullscreen (`L`)
+- **AI loadouts** can equip RC clones (bots do not remote-pilot — Seek runs normally)
+- RC munitions cost **+10%** vs stock
+- Auto-exit MissileCamera fullscreen when your tracked ownship is destroyed
+
+### Whitelist (v1)
+
+| Role | RC name | Stock base |
+|------|---------|------------|
+| DL Jet | ALM-D500 | ALM-C450 |
+| DL Jet | AGM-98D | AGM-99 |
+| DL Jet | DLhM-300S | AShM-300 |
+| DL Solid | Tusko-D | Tusko-B |
+| SATCOM Jet | ALND-4S | ALND-4 |
+| SATCOM Solid | Piledriver TBM-S | Piledriver TBM |
+
+---
+
+## Install
+
+1. Install **BepInEx 5** and **[MissileCamera](https://github.com/Mursisru/MissileCamera)**.
+2. Download `RemoteControl-1-0-0.zip` from [Releases](https://github.com/Mursisru/MissileCamera-Remote-Control/releases).
+3. Extract `MissileCameraRemoteControl.dll` into:
+
+```text
+…/Nuclear Option/BepInEx/plugins/
+```
+
+4. Launch once to generate `BepInEx/config/com.at747.missilecamera.remotecontrol.cfg`.
+
+---
+
+## How to use
+
+1. Equip an RC clone on a compatible hardpoint.
+2. Launch the missile, open **MissileCamera Fullscreen** (default `K` in MissileCamera).
+3. Press **`T`** to take / release remote control (or **`L`** to pick from the list).
+4. Aim with the **mouse**; manage throttle / afterburner with the binds below.
+
+> [!TIP]
+> World-space aim: the reticle is a command point in the world. Turning the seeker slides the marker on the FLIR — fly the nose onto the marker, War Thunder style.
 
 > [!NOTE]
-> Vanilla mounts are never mutated. Clones are separate loadout options injected only onto hardpoints that already allow the original weapon.
-
----
-
-## Features
-
-- Selective RC clones with unique designations (guidance shown as DL/SATCOM in UI)
-- Hardpoint-compatible loadout injection
-- Manual mouse aim via vanilla `SetAimpoint` (stock aero / Over-G retained)
-- Jet / solid throttle, afterburner, afterburner VFX reuse
-- Encyclopedia missile entries for RC variants
-- **P2 datalink:** DL mesh 150 km + LoS (weak without LoS; drop if out of range or jammed &gt;5 s); SATCOM always full link
-- **P3 picker:** `L` opens allied RC missile list in MissileCamera Fullscreen
-- **P3 boost sync:** host broadcasts afterburner state to clients in mod lobbies
-- **MP presence:** clients query the server for this addon; no reply → RC disabled for that session only
-
----
-
-## Requirements
-
-- Nuclear Option
-- BepInEx 5
-- [MissileCamera](https://github.com/Mursisru/MissileCamera) installed
-
----
-
-## Player installation
-
-1. Install BepInEx 5 and MissileCamera.
-2. Copy `MissileCameraRemoteControl.dll` into `BepInEx/plugins/`.
-3. Launch the game once to generate config.
+> While you hold RC, proximity fly-by airburst is disabled so CPA near-misses do not detonate. Impact fuse still works. On release, seeker handoff resumes autonomous guidance toward the RC-chosen target.
 
 ---
 
@@ -69,17 +97,26 @@ BepInEx 5 addon for **Nuclear Option** that extends [MissileCamera](https://gith
 | Throttle down | Right Ctrl |
 | Aim | Mouse |
 
-Configure under `com.at747.missilecamera.remotecontrol.cfg`.
+All binds are configurable in the BepInEx config file.
 
 ---
 
-## Build
+## Branches
+
+| Branch | Purpose |
+|--------|---------|
+| `main` | Stable releases |
+| `dev` | Ongoing development (starts from `main` at 1.0.0) |
+
+---
+
+## Build from source
 
 ```bash
 dotnet build MissileCameraRemoteControl.csproj -c Release
 ```
 
-Set `NuclearOptionRoot` via `Directory.Build.props` (not committed) to your game install path.
+Point game / reference paths via a local `Directory.Build.props` (not committed).
 
 ---
 

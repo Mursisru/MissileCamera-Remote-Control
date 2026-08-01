@@ -3,6 +3,7 @@ using System.Reflection;
 using BepInEx.Logging;
 using HarmonyLib;
 using MissileCameraRemoteControl.Control;
+using UnityEngine;
 
 namespace MissileCameraRemoteControl.HarmonyPatches
 {
@@ -119,9 +120,11 @@ namespace MissileCameraRemoteControl.HarmonyPatches
                     return;
 
                 float t = ThrottleController.UiThrottle;
+                if (_displayThrottleField.GetValue(__instance) is float cur && Mathf.Abs(cur - t) < 0.0005f)
+                    return;
+
                 _displayThrottleField.SetValue(__instance, t);
                 _displayReadyField?.SetValue(__instance, true);
-                // Force SetFill to refresh next compare
                 _lastThrottleField?.SetValue(__instance, -1f);
             }
             catch

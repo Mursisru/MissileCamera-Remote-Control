@@ -7,6 +7,7 @@ namespace MissileCameraRemoteControl.Access
     /// <summary>
     /// Reflects MissileCamera FS / feed APIs without referencing MC internals.
     /// CAMERA_SAFETY: never writes CameraStateManager.
+    /// Hot path: use RcFrameCache; Raw* methods are uncached getters for the cache.
     /// </summary>
     internal static class MissileCameraFsAccess
     {
@@ -18,26 +19,32 @@ namespace MissileCameraRemoteControl.Access
         private static MethodInfo? _exitIfActive;
         private static PropertyInfo? _fsViewRt;
         private static PropertyInfo? _fsHud;
+        private static PropertyInfo? _hudRootProp;
 
-        internal static bool IsFullscreenActive
+        internal static bool IsFullscreenActive => RcFrameCache.IsFullscreenActive;
+
+        internal static Camera? TryGetFeedCamera() => RcFrameCache.FeedCamera;
+
+        internal static RectTransform? TryGetFeedViewRect() => RcFrameCache.FeedViewRect;
+
+        internal static RectTransform? TryGetHudOverlayRoot() => RcFrameCache.HudOverlayRoot;
+
+        internal static bool QueryFullscreenActiveRaw()
         {
-            get
+            EnsureResolved();
+            if (_fsIsActive == null)
+                return false;
+            try
             {
-                EnsureResolved();
-                if (_fsIsActive == null)
-                    return false;
-                try
-                {
-                    return (bool)_fsIsActive.GetValue(null)!;
-                }
-                catch
-                {
-                    return false;
-                }
+                return (bool)_fsIsActive.GetValue(null)!;
+            }
+            catch
+            {
+                return false;
             }
         }
 
-        internal static Camera? TryGetFeedCamera()
+        internal static Camera? QueryFeedCameraRaw()
         {
             EnsureResolved();
             if (_tryGetFeedCamera == null)
@@ -52,7 +59,6 @@ namespace MissileCameraRemoteControl.Access
             }
         }
 
-        /// <summary>Force-close MissileCamera Fullscreen if active (ownship death / wipe).</summary>
         internal static void TryExitFullscreen()
         {
             EnsureResolved();
@@ -68,13 +74,12 @@ namespace MissileCameraRemoteControl.Access
             }
         }
 
-        /// <summary>FS feed view rect (same space as FLIR attitude center). Null if not FS / not ready.</summary>
-        internal static RectTransform? TryGetFeedViewRect()
+        internal static RectTransform? QueryFeedViewRectRaw()
         {
             EnsureResolved();
             try
             {
-                if (IsFullscreenActive && _fsViewRt != null)
+                if (QueryFullscreenActiveRaw() && _fsViewRt != null)
                 {
                     if (_fsViewRt.GetValue(null) is RectTransform view && view != null)
                         return view;
@@ -93,26 +98,28 @@ namespace MissileCameraRemoteControl.Access
             return null;
         }
 
-        /// <summary>MC HUD overlay root under the feed view — preferred parent for RC reticle.</summary>
-        internal static RectTransform? TryGetHudOverlayRoot()
+        internal static RectTransform? QueryHudOverlayRootRaw()
         {
             EnsureResolved();
             try
             {
-                RectTransform? view = TryGetFeedViewRect();
+                RectTransform? view = QueryFeedViewRectRaw();
                 if (view == null)
                     return null;
 
                 Transform? hud = view.Find("MissileCameraHudOverlay");
-                if (hud != null && hud is RectTransform hudRt)
+                if (hud is RectTransform hudRt)
                     return hudRt;
 
-                // FS host Hud.Root via reflection if Find missed.
                 if (_fsHud != null && _fsHud.GetValue(null) is object hudObj)
                 {
-                    PropertyInfo? rootProp = hudObj.GetType().GetProperty(
-                        "Root", BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic);
-                    if (rootProp?.GetValue(hudObj) is RectTransform root && root != null)
+                    if (_hudRootProp == null)
+                    {
+                        _hudRootProp = hudObj.GetType().GetProperty(
+                            "Root", BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic);
+                    }
+
+                    if (_hudRootProp?.GetValue(hudObj) is RectTransform root && root != null)
                         return root;
                 }
             }
@@ -122,6 +129,13 @@ namespace MissileCameraRemoteControl.Access
             }
 
             return null;
+        }
+
+        /// <summary>Call once from host bootstrap — avoid GetAssemblies from hot getters.</summary>
+        internal static void TryResolveNow()
+        {
+            _nextResolveAttempt = 0f;
+            EnsureResolved();
         }
 
         private static void EnsureResolved()

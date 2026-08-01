@@ -16,6 +16,7 @@ namespace MissileCameraRemoteControl.Control
     {
         private const float RampPerSec = 2.85f;
         private const float TapStep = 0.1f;
+        private const float ThrEps = 0.0005f;
 
         /// <summary>Motor.topSpeed lift while AB held — vanilla skips AddForce at Vmax.</summary>
         internal const float BoostTopSpeedFactor = 1.35f;
@@ -25,6 +26,7 @@ namespace MissileCameraRemoteControl.Control
             ?? typeof(Missile).GetField("throttle", BindingFlags.Instance | BindingFlags.Public);
 
         private static float _throttle = 1f;
+        private static float _appliedThrottle = float.NaN;
         private static bool _boost;
         private static RcEngineKind _engine = RcEngineKind.Jet;
 
@@ -34,6 +36,7 @@ namespace MissileCameraRemoteControl.Control
         internal static void Reset()
         {
             _throttle = 1f;
+            _appliedThrottle = float.NaN;
             _boost = false;
             _engine = RcEngineKind.Jet;
         }
@@ -47,7 +50,7 @@ namespace MissileCameraRemoteControl.Control
             RcMissileTag? tag = missile.GetComponent<RcMissileTag>();
             _engine = tag != null ? tag.Engine : RcEngineKind.Jet;
             _throttle = 1f;
-            ApplyUiThrottle(missile);
+            ApplyUiThrottle(missile, force: true);
             RcBoostStateSync.Publish(missile, false);
         }
 
@@ -61,8 +64,7 @@ namespace MissileCameraRemoteControl.Control
             {
                 _throttle = 1f;
                 _boost = false;
-                ApplyUiThrottle(missile);
-                AfterburnerVfxBinder.SetBoost(missile, false);
+                ApplyUiThrottle(missile, force: false);
                 RcBoostStateSync.Publish(missile, false);
                 return;
             }
@@ -71,7 +73,6 @@ namespace MissileCameraRemoteControl.Control
 
             if (link == RcLinkLevel.Degraded)
             {
-                // Weak mesh: hold cruise thr, but keep AB authority.
                 _throttle = 1f;
             }
             else
@@ -87,8 +88,8 @@ namespace MissileCameraRemoteControl.Control
                     _throttle = Mathf.Clamp01(_throttle - RampPerSec * Time.unscaledDeltaTime);
             }
 
-            ApplyUiThrottle(missile);
-            AfterburnerVfxBinder.SetBoost(missile, _boost);
+            ApplyUiThrottle(missile, force: false);
+            // Publish applies VFX on edge + net — do not call SetBoost separately.
             RcBoostStateSync.Publish(missile, _boost);
         }
 
@@ -111,12 +112,9 @@ namespace MissileCameraRemoteControl.Control
                     _throttle = 1f;
             }
 
-            ApplyUiThrottle(missile);
+            ApplyUiThrottle(missile, force: false);
         }
 
-        /// <summary>
-        /// Motor.Thrust Prefix — OwnsMissile so FixedUpdate still applies if FS flickers.
-        /// </summary>
         internal static bool TryGetMotorOverride(Missile missile, out float effectiveThrottle, out float burnMult)
         {
             effectiveThrottle = 1f;
@@ -156,8 +154,12 @@ namespace MissileCameraRemoteControl.Control
             return true;
         }
 
-        private static void ApplyUiThrottle(Missile missile)
+        private static void ApplyUiThrottle(Missile missile, bool force)
         {
+            if (!force && !float.IsNaN(_appliedThrottle) && Mathf.Abs(_appliedThrottle - _throttle) < ThrEps)
+                return;
+            _appliedThrottle = _throttle;
+
             try
             {
                 missile.SetThrottle(_throttle);

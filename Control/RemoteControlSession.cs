@@ -59,6 +59,7 @@ namespace MissileCameraRemoteControl.Control
             ThrottleController.Reset();
             RcLinkQuality.Reset();
             RcWarheadSafety.Reset();
+            RcSeekerSuppress.Reset();
             RcUprightAssist.ResetSaved();
             if (restoreTargets)
                 RcAircraftTargetSnapshot.Restore();
@@ -152,7 +153,7 @@ namespace MissileCameraRemoteControl.Control
             // Lost: keep stick (thr like Degraded). Auto-Release handed aim to Seek near jam/targets.
             RcLinkQuality.Evaluate(_controlled);
 
-            RcSeekerSuppress.Tick(_controlled);
+            // Seeker suppress runs on Missile.Steering prefix (Fixed) — not every Update.
             RcWarheadSafety.Tick(_controlled);
             RcRetargetController.Tick(_controlled);
             MouseGuidanceController.Tick(_controlled);

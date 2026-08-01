@@ -58,7 +58,6 @@ namespace MissileCameraRemoteControl.Control
                 return;
 
             _lastMissile = missile;
-            FsAimReticle.SetVisible(true);
 
             float mx = Input.GetAxisRaw("Mouse X");
             float my = Input.GetAxisRaw("Mouse Y");
