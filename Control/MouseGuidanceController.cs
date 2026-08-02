@@ -107,6 +107,8 @@ namespace MissileCameraRemoteControl.Control
 
             // Aimpoint along world aim from feed camera — projects cleanly on FLIR.
             Vector3 aimLocal = view.position + _worldAimDir * dist;
+            // Ballistic/TBM: do not command a point under terrain (CCD tunnel under map).
+            aimLocal = RcBallisticImpactSafety.ClampAimToSurface(missile, view.position, aimLocal, dist);
             try
             {
                 missile.SetAimpoint(aimLocal.ToGlobalPosition(), Vector3.zero);
@@ -115,7 +117,10 @@ namespace MissileCameraRemoteControl.Control
             {
                 try
                 {
-                    missile.SetAimpoint(missile.GlobalPosition() + _worldAimDir * dist, Vector3.zero);
+                    Vector3 fallback = missile.transform.position + _worldAimDir * dist;
+                    fallback = RcBallisticImpactSafety.ClampAimToSurface(
+                        missile, missile.transform.position, fallback, dist);
+                    missile.SetAimpoint(fallback.ToGlobalPosition(), Vector3.zero);
                 }
                 catch
                 {

@@ -60,6 +60,7 @@ namespace MissileCameraRemoteControl.Control
             RcLinkQuality.Reset();
             RcWarheadSafety.Reset();
             RcSeekerSuppress.Reset();
+            RcBallisticImpactSafety.Reset();
             RcUprightAssist.ResetSaved();
             if (restoreTargets)
                 RcAircraftTargetSnapshot.Restore();
@@ -162,9 +163,16 @@ namespace MissileCameraRemoteControl.Control
 
         internal static void FixedTick()
         {
-            if (!IsActive || _controlled == null)
+            Missile? m = _controlled;
+            if (m == null || m.disabled)
                 return;
-            ThrottleController.Reinforce(_controlled);
+
+            if (OwnsMissile(m))
+                RcBallisticImpactSafety.FixedTick(m);
+
+            if (!IsActive)
+                return;
+            ThrottleController.Reinforce(m);
         }
 
         internal static void RefreshPool()

@@ -1,11 +1,14 @@
 using HarmonyLib;
 using MissileCameraRemoteControl.Access;
+using MissileCameraRemoteControl.Control;
 
 namespace MissileCameraRemoteControl.HarmonyPatches
 {
     /// <summary>
-    /// RC clones: block seeker self-destruct (low speed / fuel coast / missed target / null target).
-    /// Allow Detonate only from DetectCollisions (impact/terrain/sea) or TakeDamage (being shot).
+    /// While player OwnsMissile: block seeker self-destruct (fuel/speed/null-target SD)
+    /// so RC stick is not killed mid-flight. Impact / TakeDamage still allowed via gate.
+    /// After Release (and AI clones never owned): vanilla Detonate paths run again
+    /// (target-lost SD, ballistic airburst) — fixes loiter when primary target dies.
     /// </summary>
     internal static class RcDetonateGate
     {
@@ -27,7 +30,6 @@ namespace MissileCameraRemoteControl.HarmonyPatches
     {
         private static void Prefix() => RcDetonateGate.AllowBegin();
 
-        // Finalizer always runs (success or exception) — do not also use Postfix (would double-end).
         private static void Finalizer() => RcDetonateGate.AllowEnd();
     }
 
@@ -48,11 +50,11 @@ namespace MissileCameraRemoteControl.HarmonyPatches
             {
                 if (__instance == null)
                     return true;
-                if (!MissileAccess.IsRcMissile(__instance))
+                // Only while player is remote-piloting — never permanently mute RC clones.
+                if (!RemoteControlSession.OwnsMissile(__instance))
                     return true;
                 if (RcDetonateGate.IsAllowed)
                     return true;
-
                 return false;
             }
             catch
