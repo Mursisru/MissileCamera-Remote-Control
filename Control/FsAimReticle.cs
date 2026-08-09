@@ -4,16 +4,21 @@ using UnityEngine.UI;
 namespace MissileCameraRemoteControl.Control
 {
     /// <summary>
-    /// RC aim circle. Parent under MC HUD; place with FeedScreenProjector math on viewRect
-    /// (same space as MC intercept). Viewport 0.5 ⇒ anchored 0 ⇒ FLIR optical center.
+    /// RC aim marker: four white corner brackets with gaps + center pip.
+    /// Parent under MC HUD; viewport 0.5 ⇒ FLIR optical center.
     /// </summary>
     internal static class FsAimReticle
     {
-        private const float CircleSizePx = 48f;
-        private const float RingThickness = 2.5f;
+        private const float BracketOuterPx = 52f;
+        private const float BracketArmPx = 14f;
+        private const float BracketThicknessPx = 2.5f;
+        private const float GapInsetPx = 10f;
+        private const float PipSizePx = 4f;
+
+        private static readonly Color MarkerWhite = new Color(1f, 1f, 1f, 0.95f);
 
         private static GameObject? _root;
-        private static RectTransform? _circleRt;
+        private static RectTransform? _markerRt;
         private static RectTransform? _layoutSpace;
         private static Canvas? _fallbackCanvas;
         private static bool _visible;
@@ -44,14 +49,13 @@ namespace MissileCameraRemoteControl.Control
             if (!_visible)
                 return;
             EnsureUi();
-            if (!inFront || _circleRt == null)
+            if (!inFront || _markerRt == null)
                 return;
             if (float.IsNaN(vx) || float.IsNaN(vy) || float.IsInfinity(vx) || float.IsInfinity(vy))
                 return;
 
             ReparentToHudIfNeeded();
 
-            // Prefer feed viewRect size — identical to MissileCamera.FeedScreenProjector.
             RectTransform? space = Access.MissileCameraFsAccess.TryGetFeedViewRect() ?? _layoutSpace;
             if (space != null)
             {
@@ -59,13 +63,13 @@ namespace MissileCameraRemoteControl.Control
                 if (size.x < 1f || size.y < 1f)
                     return;
 
-                _circleRt.anchoredPosition = new Vector2(
+                _markerRt.anchoredPosition = new Vector2(
                     (vx - 0.5f) * size.x,
                     (vy - 0.5f) * size.y);
                 return;
             }
 
-            float margin = CircleSizePx * 0.5f;
+            float margin = BracketOuterPx * 0.5f;
             float sx = Mathf.Clamp(vx * Screen.width, margin, Screen.width - margin);
             float sy = Mathf.Clamp(vy * Screen.height, margin, Screen.height - margin);
             if (_fallbackCanvas != null
@@ -73,7 +77,7 @@ namespace MissileCameraRemoteControl.Control
                 && RectTransformUtility.ScreenPointToLocalPointInRectangle(
                     canvasRt, new Vector2(sx, sy), null, out Vector2 local))
             {
-                _circleRt.anchoredPosition = local;
+                _markerRt.anchoredPosition = local;
             }
         }
 
@@ -83,7 +87,7 @@ namespace MissileCameraRemoteControl.Control
             {
                 Object.Destroy(_root);
                 _root = null;
-                _circleRt = null;
+                _markerRt = null;
                 _layoutSpace = null;
                 _fallbackCanvas = null;
             }
@@ -119,12 +123,12 @@ namespace MissileCameraRemoteControl.Control
             rt.localScale = Vector3.one;
             rt.localRotation = Quaternion.identity;
 
-            if (_circleRt != null)
+            if (_markerRt != null)
             {
-                _circleRt.anchorMin = new Vector2(0.5f, 0.5f);
-                _circleRt.anchorMax = new Vector2(0.5f, 0.5f);
-                _circleRt.pivot = new Vector2(0.5f, 0.5f);
-                _circleRt.sizeDelta = new Vector2(CircleSizePx, CircleSizePx);
+                _markerRt.anchorMin = new Vector2(0.5f, 0.5f);
+                _markerRt.anchorMax = new Vector2(0.5f, 0.5f);
+                _markerRt.pivot = new Vector2(0.5f, 0.5f);
+                _markerRt.sizeDelta = new Vector2(BracketOuterPx, BracketOuterPx);
             }
 
             _root.transform.SetAsLastSibling();
@@ -163,51 +167,61 @@ namespace MissileCameraRemoteControl.Control
                 _root.AddComponent<GraphicRaycaster>();
             }
 
-            var circleGo = new GameObject("AimCircle");
-            circleGo.transform.SetParent(_root.transform, false);
-            _circleRt = circleGo.AddComponent<RectTransform>();
-            _circleRt.anchorMin = new Vector2(0.5f, 0.5f);
-            _circleRt.anchorMax = new Vector2(0.5f, 0.5f);
-            _circleRt.pivot = new Vector2(0.5f, 0.5f);
-            _circleRt.sizeDelta = new Vector2(CircleSizePx, CircleSizePx);
+            var markerGo = new GameObject("AimBracket");
+            markerGo.transform.SetParent(_root.transform, false);
+            _markerRt = markerGo.AddComponent<RectTransform>();
+            _markerRt.anchorMin = new Vector2(0.5f, 0.5f);
+            _markerRt.anchorMax = new Vector2(0.5f, 0.5f);
+            _markerRt.pivot = new Vector2(0.5f, 0.5f);
+            _markerRt.sizeDelta = new Vector2(BracketOuterPx, BracketOuterPx);
 
-            var ring = circleGo.AddComponent<Image>();
-            ring.sprite = CreateRingSprite();
-            // Distinct from MC intercept green (0,1,0) — pale yellow-green.
-            ring.color = new Color(0.95f, 1f, 0.55f, 0.95f);
-            ring.raycastTarget = false;
+            // Four corners: TL, TR, BL, BR — L-brackets with gap toward center.
+            float half = BracketOuterPx * 0.5f;
+            float inset = GapInsetPx;
+            AddCornerArm(markerGo.transform, "TL_H", new Vector2(-half + inset, half - inset), new Vector2(BracketArmPx, BracketThicknessPx), new Vector2(0f, 1f));
+            AddCornerArm(markerGo.transform, "TL_V", new Vector2(-half + inset, half - inset), new Vector2(BracketThicknessPx, BracketArmPx), new Vector2(0f, 1f));
+            AddCornerArm(markerGo.transform, "TR_H", new Vector2(half - inset, half - inset), new Vector2(BracketArmPx, BracketThicknessPx), new Vector2(1f, 1f));
+            AddCornerArm(markerGo.transform, "TR_V", new Vector2(half - inset, half - inset), new Vector2(BracketThicknessPx, BracketArmPx), new Vector2(1f, 1f));
+            AddCornerArm(markerGo.transform, "BL_H", new Vector2(-half + inset, -half + inset), new Vector2(BracketArmPx, BracketThicknessPx), new Vector2(0f, 0f));
+            AddCornerArm(markerGo.transform, "BL_V", new Vector2(-half + inset, -half + inset), new Vector2(BracketThicknessPx, BracketArmPx), new Vector2(0f, 0f));
+            AddCornerArm(markerGo.transform, "BR_H", new Vector2(half - inset, -half + inset), new Vector2(BracketArmPx, BracketThicknessPx), new Vector2(1f, 0f));
+            AddCornerArm(markerGo.transform, "BR_V", new Vector2(half - inset, -half + inset), new Vector2(BracketThicknessPx, BracketArmPx), new Vector2(1f, 0f));
 
             var pipGo = new GameObject("Pip");
-            pipGo.transform.SetParent(circleGo.transform, false);
+            pipGo.transform.SetParent(markerGo.transform, false);
             var pipRt = pipGo.AddComponent<RectTransform>();
-            pipRt.sizeDelta = new Vector2(5f, 5f);
+            pipRt.anchorMin = new Vector2(0.5f, 0.5f);
+            pipRt.anchorMax = new Vector2(0.5f, 0.5f);
+            pipRt.pivot = new Vector2(0.5f, 0.5f);
+            pipRt.anchoredPosition = Vector2.zero;
+            pipRt.sizeDelta = new Vector2(PipSizePx, PipSizePx);
             var pip = pipGo.AddComponent<Image>();
             pip.sprite = CreateFilledSprite();
-            pip.color = new Color(1f, 1f, 0.7f, 1f);
+            pip.color = MarkerWhite;
             pip.raycastTarget = false;
 
             if (hud != null)
                 _root.transform.SetAsLastSibling();
         }
 
-        private static Sprite CreateRingSprite()
+        private static void AddCornerArm(
+            Transform parent,
+            string name,
+            Vector2 anchoredPos,
+            Vector2 size,
+            Vector2 pivot)
         {
-            const int size = 64;
-            var tex = new Texture2D(size, size, TextureFormat.ARGB32, false);
-            tex.filterMode = FilterMode.Bilinear;
-            float c = (size - 1) * 0.5f;
-            float outer = c - 1f;
-            float inner = outer - RingThickness * (size / CircleSizePx);
-            for (int y = 0; y < size; y++)
-            {
-                for (int x = 0; x < size; x++)
-                {
-                    float d = Mathf.Sqrt((x - c) * (x - c) + (y - c) * (y - c));
-                    tex.SetPixel(x, y, new Color(1f, 1f, 1f, (d <= outer && d >= inner) ? 1f : 0f));
-                }
-            }
-            tex.Apply();
-            return Sprite.Create(tex, new Rect(0, 0, size, size), new Vector2(0.5f, 0.5f), 100f);
+            var go = new GameObject(name);
+            go.transform.SetParent(parent, false);
+            var rt = go.AddComponent<RectTransform>();
+            rt.anchorMin = new Vector2(0.5f, 0.5f);
+            rt.anchorMax = new Vector2(0.5f, 0.5f);
+            rt.pivot = pivot;
+            rt.anchoredPosition = anchoredPos;
+            rt.sizeDelta = size;
+            var img = go.AddComponent<Image>();
+            img.color = MarkerWhite;
+            img.raycastTarget = false;
         }
 
         private static Sprite CreateFilledSprite()

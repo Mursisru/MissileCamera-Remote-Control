@@ -77,8 +77,24 @@ namespace MissileCameraRemoteControl.Control
                 // ignore
             }
 
+            // Impact-only RC: never force-detonate on release. Dead/cleared lock → resume Seek / SD blocked by gate.
             if (unit == null || unit.disabled)
+            {
+                if (writeAimpoint)
+                {
+                    try
+                    {
+                        if (seeker is OpticalSeekerCruiseMissile cruise)
+                            CruiseGuidance?.SetValue(cruise, true);
+                    }
+                    catch
+                    {
+                        // ignore
+                    }
+                }
+
                 return;
+            }
 
             GlobalPosition known = ResolveKnownPosition(missile, unit);
             Vector3 knownVel = Vector3.zero;
@@ -107,27 +123,9 @@ namespace MissileCameraRemoteControl.Control
                     ApplyGeneric(missile, known, knownVel);
             }
 
-            // Proxy only on Release commit, and only if seeker wants proximity (vanilla).
-            if (writeAimpoint && seeker.proximityFuse)
-            {
-                try
-                {
-                    Transform? tf = unit.transform;
-                    Rigidbody? rb = null;
-                    try { rb = unit.rb; }
-                    catch { rb = unit.GetComponent<Rigidbody>(); }
-                    if (tf != null)
-                        missile.SetProxyFuse(tf, rb);
-                }
-                catch
-                {
-                    // ignore
-                }
-            }
-            else if (!writeAimpoint)
-            {
+            // Never arm proxy on RC clones (impact fuse only — SetProxyFuse also Harmony-blocked).
+            if (!writeAimpoint)
                 Access.MissileAccess.ClearProxyFuse(missile);
-            }
 
             if (log)
             {

@@ -5,9 +5,8 @@ using UnityEngine;
 namespace MissileCameraRemoteControl.Control
 {
     /// <summary>
-    /// World-space WT aim: stable world direction; mouse rotates it; camera/missile turn
-    /// slides the reticle on FLIR (toward center when you turn into the aim).
-    /// Not camera-relative stick — that froze the marker on screen during rotation.
+    /// World-space WT aim. Mouse queues deltas; LateProject updates reticle after SyncPose.
+    /// ReinforceAimpoint runs on Steering prefix (after Seek) so ballistic/cruise Seek cannot steal stick.
     /// </summary>
     internal static class MouseGuidanceController
     {
@@ -26,6 +25,8 @@ namespace MissileCameraRemoteControl.Control
         private static readonly Vector3[] _viewCorners = new Vector3[4];
 
         internal static Vector2 GetReticleViewport() => _lastStableViewport;
+
+        internal static Vector3 WorldAimDir => _worldAimDir;
 
         internal static Vector2 GetReticleScreenPosition()
         {
@@ -52,7 +53,6 @@ namespace MissileCameraRemoteControl.Control
             FsAimReticle.SetVisible(false);
         }
 
-        /// <summary>Update: queue mouse/keys; LateProject writes aim after SyncPose.</summary>
         internal static void Tick(Missile missile)
         {
             if (missile == null || missile.disabled)
@@ -92,7 +92,7 @@ namespace MissileCameraRemoteControl.Control
             }
         }
 
-        /// <summary>After MC SyncPose — apply mouse to world aim, write aimpoint, project marker.</summary>
+        /// <summary>After MC SyncPose — apply mouse, project marker (aim already reinforced on Steering).</summary>
         internal static void LateProject()
         {
             Missile? missile = _lastMissile;
@@ -105,6 +105,49 @@ namespace MissileCameraRemoteControl.Control
             Transform mt = missile.transform;
             Transform view = feed != null ? feed.transform : mt;
 
+            ConsumePendingAndEnsureInit(view, mt);
+            WriteAimpoint(missile, mt);
+
+            Vector3 projectPoint = view.position + _worldAimDir * ProjectDistance;
+            if (feed != null)
+            {
+                Vector3 vp = feed.WorldToViewportPoint(projectPoint);
+                if (vp.z > 0.05f
+                    && !float.IsNaN(vp.x) && !float.IsNaN(vp.y)
+                    && !float.IsInfinity(vp.x) && !float.IsInfinity(vp.y))
+                {
+                    _lastStableViewport = new Vector2(vp.x, vp.y);
+                    FsAimReticle.SetFromViewport(vp.x, vp.y, inFront: true);
+                    return;
+                }
+
+                FsAimReticle.SetFromViewport(_lastStableViewport.x, _lastStableViewport.y, inFront: true);
+                return;
+            }
+
+            FsAimReticle.SetFromViewport(0.5f, 0.5f, inFront: true);
+        }
+
+        /// <summary>
+        /// Called from Missile.Steering Prefix — after Seek in ServerFixedUpdate.
+        /// Restores player aim so ballistic/cruise Seek cannot own the stick.
+        /// </summary>
+        internal static void ReinforceAimpoint(Missile missile)
+        {
+            if (missile == null || missile.disabled)
+                return;
+            if (!RemoteControlSession.OwnsMissile(missile))
+                return;
+
+            Transform mt = missile.transform;
+            Camera? feed = MissileCameraFsAccess.TryGetFeedCamera();
+            Transform view = feed != null ? feed.transform : mt;
+            ConsumePendingAndEnsureInit(view, mt);
+            WriteAimpoint(missile, mt);
+        }
+
+        private static void ConsumePendingAndEnsureInit(Transform view, Transform mt)
+        {
             if (!_initialized)
             {
                 Vector3 fwd = view.forward;
@@ -125,57 +168,28 @@ namespace MissileCameraRemoteControl.Control
                 _worldAimDir = _worldAimDir.normalized;
             else
                 _worldAimDir = view.forward.normalized;
+        }
 
+        private static void WriteAimpoint(Missile missile, Transform mt)
+        {
             float dist = Mathf.Max(200f, RcConfig.AimDistance.Value);
+            Vector3 origin = mt.position;
+            Vector3 dir = _worldAimDir.sqrMagnitude > 1e-8f ? _worldAimDir.normalized : mt.forward;
+            // Ray-resolve: looking down hits terrain along look — does not flatten dive.
+            Vector3 aimLocal = RcBallisticImpactSafety.ResolveAimPoint(origin, dir, dist);
 
-            // Aimpoint along world aim from feed camera — projects cleanly on FLIR.
-            Vector3 aimLocal = view.position + _worldAimDir * dist;
-            // Do not command under terrain (long-range / dive CCD tunnel).
-            aimLocal = RcBallisticImpactSafety.ClampAimToSurface(missile, view.position, aimLocal, dist);
             try
             {
                 missile.SetAimpoint(aimLocal.ToGlobalPosition(), Vector3.zero);
             }
             catch
             {
-                try
-                {
-                    Vector3 fallback = missile.transform.position + _worldAimDir * dist;
-                    fallback = RcBallisticImpactSafety.ClampAimToSurface(
-                        missile, missile.transform.position, fallback, dist);
-                    missile.SetAimpoint(fallback.ToGlobalPosition(), Vector3.zero);
-                }
-                catch
-                {
-                    // ignore
-                }
+                // ignore
             }
-
-            // Project same world point → reticle slides when view rotates (world-space).
-            Vector3 projectPoint = view.position + _worldAimDir * ProjectDistance;
-            if (feed != null)
-            {
-                Vector3 vp = feed.WorldToViewportPoint(projectPoint);
-                if (vp.z > 0.05f
-                    && !float.IsNaN(vp.x) && !float.IsNaN(vp.y)
-                    && !float.IsInfinity(vp.x) && !float.IsInfinity(vp.y))
-                {
-                    _lastStableViewport = new Vector2(vp.x, vp.y);
-                    FsAimReticle.SetFromViewport(vp.x, vp.y, inFront: true);
-                    return;
-                }
-
-                // Behind camera: keep last on-screen edge hint.
-                FsAimReticle.SetFromViewport(_lastStableViewport.x, _lastStableViewport.y, inFront: true);
-                return;
-            }
-
-            FsAimReticle.SetFromViewport(0.5f, 0.5f, inFront: true);
         }
 
         private static void ApplyMouseToWorldAim(Transform view, float yawDeltaDeg, float pitchDeltaDeg)
         {
-            // Rotate world aim using current view axes (mouse feel), result stays world-stable.
             Vector3 up = view.up;
             Vector3 right = view.right;
             if (up.sqrMagnitude < 1e-8f || right.sqrMagnitude < 1e-8f)

@@ -16,6 +16,7 @@ namespace MissileCameraRemoteControl.Access
         private static PropertyInfo? _fsIsActive;
         private static MethodInfo? _tryGetFeedCamera;
         private static MethodInfo? _tryGetPanelRt;
+        private static MethodInfo? _tryGetFollowedMissile;
         private static MethodInfo? _exitIfActive;
         private static PropertyInfo? _fsViewRt;
         private static PropertyInfo? _fsHud;
@@ -28,6 +29,22 @@ namespace MissileCameraRemoteControl.Access
         internal static RectTransform? TryGetFeedViewRect() => RcFrameCache.FeedViewRect;
 
         internal static RectTransform? TryGetHudOverlayRoot() => RcFrameCache.HudOverlayRoot;
+
+        /// <summary>Missile currently shown in MissileCamera FS feed (not nearest-to-aircraft).</summary>
+        internal static Missile? TryGetFollowedMissile()
+        {
+            EnsureResolved();
+            if (_tryGetFollowedMissile == null)
+                return null;
+            try
+            {
+                return _tryGetFollowedMissile.Invoke(null, null) as Missile;
+            }
+            catch
+            {
+                return null;
+            }
+        }
 
         internal static bool QueryFullscreenActiveRaw()
         {
@@ -179,6 +196,12 @@ namespace MissileCameraRemoteControl.Access
                     null);
                 _tryGetPanelRt = feed?.GetMethod(
                     "TryGetPanelRt",
+                    BindingFlags.Static | BindingFlags.NonPublic | BindingFlags.Public,
+                    null,
+                    Type.EmptyTypes,
+                    null);
+                _tryGetFollowedMissile = feed?.GetMethod(
+                    "TryGetFollowedMissile",
                     BindingFlags.Static | BindingFlags.NonPublic | BindingFlags.Public,
                     null,
                     Type.EmptyTypes,

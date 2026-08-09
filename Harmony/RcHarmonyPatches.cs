@@ -43,13 +43,13 @@ namespace MissileCameraRemoteControl.HarmonyPatches
     [HarmonyPatch(typeof(MountedMissile), nameof(MountedMissile.Fire))]
     internal static class MountedMissileFireRcPatch
     {
-        private static void Prefix(MountedMissile __instance)
+        private static void Prefix(MountedMissile __instance, Unit owner)
         {
             try
             {
                 if (!Network.RcServerCompat.FeaturesAllowed)
                     return;
-                LaunchRcCapture.EnqueueFromWeapon(__instance);
+                LaunchRcCapture.EnqueueFromWeapon(__instance, owner);
             }
             catch
             {
@@ -115,6 +115,7 @@ namespace MissileCameraRemoteControl.HarmonyPatches
             string bare = CloneProfile.StripLegacyPrefix(name);
             if (!CloneProfile.TryResolveEngineFromWeaponName(bare, out tag.Engine))
                 tag.Engine = RcEngineKind.Jet;
+            tag.Controllable = !CloneProfile.IsPassiveShellDisplayName(name);
 
             MissileSeeker? seeker = MissileAccess.GetSeeker(missile) ?? missile.GetComponent<MissileSeeker>();
             tag.BackupSeekerType = seeker != null ? seeker.GetSeekerType() : string.Empty;
@@ -136,8 +137,8 @@ namespace MissileCameraRemoteControl.HarmonyPatches
 
         public static bool Prefix(MissileSeeker __instance)
         {
-            // Fast path: no RC session → never touch seeker fields (all missiles).
-            if (RemoteControlSession.Controlled == null)
+            // Fast path: no RC stick and no formation → never touch seeker fields.
+            if (RemoteControlSession.Controlled == null && !RcFormationFollow.IsActive)
                 return true;
 
             try
@@ -163,7 +164,8 @@ namespace MissileCameraRemoteControl.HarmonyPatches
 
                 // Skip Seek for RC ownership (not only IsControlling/FS).
                 // Inside terminalRange cruise Seek steals SetAimpoint every FixedUpdate.
-                if (RemoteControlSession.OwnsMissile(missile))
+                if (RemoteControlSession.OwnsMissile(missile)
+                    || RcFormationFollow.IsFollower(missile))
                     return false;
             }
             catch

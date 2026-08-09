@@ -70,12 +70,17 @@ namespace MissileCameraRemoteControl.Cloning
                     continue;
 
                 string? weaponName = original.info != null ? original.info.weaponName : null;
-                if (!CloneProfile.TryResolve(original.jsonKey, weaponName, out RcGuidanceKind guidance, out RcEngineKind engine))
+                if (!CloneProfile.TryResolve(
+                        original.jsonKey,
+                        weaponName,
+                        out RcGuidanceKind guidance,
+                        out RcEngineKind engine,
+                        out bool controllable))
                     continue;
 
                 try
                 {
-                    WeaponMount? clone = CloneMount(original, guidance, engine, log);
+                    WeaponMount? clone = CloneMount(original, guidance, engine, controllable, log);
                     if (clone == null)
                     {
                         skipped++;
@@ -107,6 +112,7 @@ namespace MissileCameraRemoteControl.Cloning
             WeaponMount original,
             RcGuidanceKind guidance,
             RcEngineKind engine,
+            bool controllable,
             ManualLogSource? log)
         {
             if (original.info == null || original.prefab == null)
@@ -182,6 +188,7 @@ namespace MissileCameraRemoteControl.Cloning
             meta.Engine = engine;
             meta.SourceMountKey = original.jsonKey;
             meta.BackupSeekerHint = backupHint;
+            meta.Controllable = controllable;
 
             WeaponMount mountClone = UnityEngine.Object.Instantiate(original);
             mountClone.name = original.name + (guidance == RcGuidanceKind.Satcom ? "_RC_SAT" : "_RC_DL");

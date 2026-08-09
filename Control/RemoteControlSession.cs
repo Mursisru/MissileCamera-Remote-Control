@@ -62,6 +62,7 @@ namespace MissileCameraRemoteControl.Control
             RcSeekerSuppress.Reset();
             RcBallisticImpactSafety.Reset();
             RcUprightAssist.ResetSaved();
+            RcFormationFollow.Clear();
             if (restoreTargets)
                 RcAircraftTargetSnapshot.Restore();
             else
@@ -83,14 +84,53 @@ namespace MissileCameraRemoteControl.Control
             }
 
             RefreshPool();
-            Missile? best = PickNearest(_pool);
+            Missile? best = PickForTake(_pool);
             if (best == null)
-            {
-                RcPlugin.ModLogger?.LogInfo("RC: no allied clone missiles available.");
                 return;
-            }
 
             Take(best);
+        }
+
+        /// <summary>Prefer the missile on the FS feed; fallback nearest to ownship.</summary>
+        private static Missile? PickForTake(List<Missile> pool)
+        {
+            if (pool.Count == 0)
+                return null;
+
+            try
+            {
+                Missile? followed = MissileCameraFsAccess.TryGetFollowedMissile();
+                if (followed != null && !followed.disabled)
+                {
+                    for (int i = 0; i < pool.Count; i++)
+                    {
+                        if (ReferenceEquals(pool[i], followed))
+                            return followed;
+                    }
+
+                    if (MissileAccess.IsRcControllable(followed)
+                        && AuthorityGate.CanControl(followed)
+                        && AuthorityGate.IsAllied(followed))
+                        return followed;
+
+                    // Do not silently Take a different missile while FS shows another — that felt like "T does nothing".
+                    RcPlugin.ModLogger?.LogInfo(
+                        $"RC: FS missile '{followed.unitName ?? followed.name}' is not an RC clone — equip a DL/SATCOM mount.");
+                    return null;
+                }
+            }
+            catch
+            {
+                // fall through
+            }
+
+            if (pool.Count == 0)
+            {
+                RcPlugin.ModLogger?.LogInfo("RC: no allied clone missiles available.");
+                return null;
+            }
+
+            return PickNearest(pool);
         }
 
         internal static void Take(Missile missile)
@@ -99,7 +139,7 @@ namespace MissileCameraRemoteControl.Control
                 return;
             if (missile == null || !AuthorityGate.CanControl(missile) || !AuthorityGate.IsAllied(missile))
                 return;
-            if (!MissileAccess.IsRcMissile(missile))
+            if (!MissileAccess.IsRcControllable(missile))
                 return;
 
             RcMissilePickerUi.Close();
@@ -148,6 +188,9 @@ namespace MissileCameraRemoteControl.Control
             if (KeybindPoll.IsDown(RcConfig.ToggleControl.Value) && !RcMissilePickerUi.IsOpen)
                 ToggleNearest();
 
+            if (KeybindPoll.IsDown(RcConfig.FormationFollow.Value) && !RcMissilePickerUi.IsOpen)
+                RcFormationFollow.ToggleFromControlled();
+
             if (!IsActive || _controlled == null)
                 return;
 
@@ -173,6 +216,7 @@ namespace MissileCameraRemoteControl.Control
             if (!IsActive)
                 return;
             ThrottleController.Reinforce(m);
+            RcFormationFollow.Tick();
         }
 
         internal static void RefreshPool()
@@ -186,7 +230,7 @@ namespace MissileCameraRemoteControl.Control
                     Missile m = all[i];
                     if (m == null || m.disabled)
                         continue;
-                    if (!MissileAccess.IsRcMissile(m))
+                    if (!MissileAccess.IsRcControllable(m))
                         continue;
                     if (!AuthorityGate.CanControl(m) || !AuthorityGate.IsAllied(m))
                         continue;

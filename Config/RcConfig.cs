@@ -32,6 +32,8 @@ namespace MissileCameraRemoteControl.Config
         internal static ConfigEntry<KeyboardShortcut> AimYawRight { get; private set; } = null!;
         internal static ConfigEntry<KeyboardShortcut> AimPitchUp { get; private set; } = null!;
         internal static ConfigEntry<KeyboardShortcut> AimPitchDown { get; private set; } = null!;
+        internal static ConfigEntry<KeyboardShortcut> RelockTarget { get; private set; } = null!;
+        internal static ConfigEntry<KeyboardShortcut> FormationFollow { get; private set; } = null!;
 
         internal static void Bind(ConfigFile config)
         {
@@ -39,7 +41,7 @@ namespace MissileCameraRemoteControl.Config
             AiEquipRcClones = config.Bind("General", "AiEquipRcClones", true,
                 "AI aircraft equip RC (DL/SATCOM) clones instead of vanilla whitelist mounts. Bots do not remote-pilot — Seek runs normally.");
 
-            AimInputMode = config.Bind("Control", "AimInputMode", RcAimInputMode.Both,
+            AimInputMode = config.Bind("Control", "AimInputMode", RcAimInputMode.Mouse,
                 "Mouse = mouse only; Keys = remappable keys only; Both = mouse + keys (WASD/arrows/numpad via binds below).");
             MouseSensitivity = config.Bind("Control", "MouseSensitivity", 0.08f,
                 "Mouse aim rate for world-space WT reticle (lower = smoother).");
@@ -86,9 +88,14 @@ namespace MissileCameraRemoteControl.Config
                 "Pitch aim up (hold). Example WASD: W; numpad: Keypad8.");
             AimPitchDown = config.Bind("Keybinds", "AimPitchDown", new KeyboardShortcut(KeyCode.DownArrow),
                 "Pitch aim down (hold). Example WASD: S; numpad: Keypad5 or Keypad2.");
+            // Physical ' key (Quote).
+            RelockTarget = config.Bind("Keybinds", "RelockTarget", new KeyboardShortcut(KeyCode.Quote),
+                "Relock target under FS reticle while RC (default ').");
+            FormationFollow = config.Bind("Keybinds", "FormationFollow", new KeyboardShortcut(KeyCode.P),
+                "Toggle formation: other allied RC missiles follow the controlled lead (exact path / rigid offsets).");
 
             RcPlugin.ModLogger?.LogInfo(
-                $"RC binds: Take={ToggleControl.Value} List={OpenMissileList.Value} AimMode={AimInputMode.Value} " +
+                $"RC binds: Take={ToggleControl.Value} List={OpenMissileList.Value} Relock={RelockTarget.Value} Form={FormationFollow.Value} AimMode={AimInputMode.Value} " +
                 $"Aim=[{AimYawLeft.Value}/{AimYawRight.Value}/{AimPitchUp.Value}/{AimPitchDown.Value}] " +
                 $"Thr+={ThrottleUp.Value} Thr-={ThrottleDown.Value} AB={Boost.Value}");
         }

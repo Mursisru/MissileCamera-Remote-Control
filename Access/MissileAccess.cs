@@ -212,5 +212,28 @@ namespace MissileCameraRemoteControl.Access
                 return false;
             }
         }
+
+        /// <summary>Player-remote-capable RC clones (excludes 76mm DLG Shell).</summary>
+        internal static bool IsRcControllable(Missile? missile)
+        {
+            if (!IsRcMissile(missile))
+                return false;
+            try
+            {
+                RcMissileTag? tag = missile!.GetComponent<RcMissileTag>();
+                if (tag != null)
+                    return tag.Controllable;
+
+                WeaponInfo? info = GetMissileInfo(missile);
+                if (info != null && CloneProfile.IsPassiveShellDisplayName(info.weaponName))
+                    return false;
+            }
+            catch
+            {
+                return false;
+            }
+
+            return true;
+        }
     }
 }

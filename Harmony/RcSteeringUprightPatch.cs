@@ -5,8 +5,8 @@ using MissileCameraRemoteControl.Control;
 namespace MissileCameraRemoteControl.HarmonyPatches
 {
     /// <summary>
-    /// Before Steering: only suppress cruise terminal/guidance.
-    /// Aim is written solely in MouseGuidance Update (no Fixed reinforce — dual SetAimpoint caused frequent jerks).
+    /// ServerFixedUpdate order: Seek() then Steering().
+    /// Prefix on Steering runs after Seek — restore RC / formation aim so GSN cannot keep the stick.
     /// </summary>
     internal static class RcSteeringUprightPatch
     {
@@ -27,7 +27,7 @@ namespace MissileCameraRemoteControl.HarmonyPatches
                     steering,
                     prefix: new HarmonyMethod(typeof(RcSteeringUprightPatch), nameof(Prefix)),
                     postfix: new HarmonyMethod(typeof(RcSteeringUprightPatch), nameof(Postfix)));
-                log?.LogInfo("Missile.Steering RC suppress patched.");
+                log?.LogInfo("Missile.Steering RC aim reinforce + suppress patched.");
             }
             catch (System.Exception ex)
             {
@@ -39,9 +39,26 @@ namespace MissileCameraRemoteControl.HarmonyPatches
         {
             if (__instance == null)
                 return;
-            if (!RemoteControlSession.OwnsMissile(__instance))
-                return;
-            RcSeekerSuppress.Tick(__instance);
+
+            try
+            {
+                if (RemoteControlSession.OwnsMissile(__instance))
+                {
+                    RcSeekerSuppress.Tick(__instance);
+                    MouseGuidanceController.ReinforceAimpoint(__instance);
+                    return;
+                }
+
+                if (RcFormationFollow.IsFollower(__instance))
+                {
+                    RcSeekerSuppress.Tick(__instance);
+                    RcFormationFollow.ReinforceAimpoint(__instance);
+                }
+            }
+            catch
+            {
+                // ignore
+            }
         }
 
         private static void Postfix(Missile __instance)

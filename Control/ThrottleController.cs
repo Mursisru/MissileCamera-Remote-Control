@@ -120,7 +120,9 @@ namespace MissileCameraRemoteControl.Control
             effectiveThrottle = 1f;
             burnMult = 1f;
 
-            if (missile == null || !RemoteControlSession.OwnsMissile(missile))
+            if (missile == null)
+                return false;
+            if (!RemoteControlSession.OwnsMissile(missile) && !RcFormationFollow.IsFollower(missile))
                 return false;
 
             RcLinkLevel link = RcLinkQuality.Current;
