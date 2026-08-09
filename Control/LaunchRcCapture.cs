@@ -23,6 +23,7 @@ namespace MissileCameraRemoteControl.Control
             internal string SourceMountKey;
             internal string BackupSeeker;
             internal bool Controllable;
+            internal bool OfficialClone;
             internal PersistentID OwnerId;
             internal float EnqueueTime;
         }
@@ -50,9 +51,19 @@ namespace MissileCameraRemoteControl.Control
             if (string.IsNullOrEmpty(name))
                 return;
 
-            bool isRc = CloneProfile.IsRcDisplayName(name)
-                || CloneProfile.TryGetGuidanceFromRcName(name, out _);
-            if (!isRc)
+            RcMountMeta? meta = null;
+            try
+            {
+                meta = weapon.GetComponentInParent<RcMountMeta>()
+                    ?? weapon.GetComponent<RcMountMeta>();
+            }
+            catch
+            {
+                meta = null;
+            }
+
+            // Official mounts only — never stamp third-party weapons that only share a [DL] prefix.
+            if (meta == null && !CloneProfile.IsRcDisplayName(name))
                 return;
 
             RcGuidanceKind guidance = RcGuidanceKind.DataLink;
@@ -61,11 +72,10 @@ namespace MissileCameraRemoteControl.Control
             string sourceKey = string.Empty;
             string backup = string.Empty;
             bool controllable = !CloneProfile.IsPassiveShellDisplayName(name);
+            bool official = true;
 
             try
             {
-                RcMountMeta? meta = weapon.GetComponentInParent<RcMountMeta>()
-                    ?? weapon.GetComponent<RcMountMeta>();
                 if (meta != null)
                 {
                     guidance = meta.Guidance;
@@ -73,10 +83,12 @@ namespace MissileCameraRemoteControl.Control
                     sourceKey = meta.SourceMountKey ?? string.Empty;
                     backup = meta.BackupSeekerHint ?? string.Empty;
                     controllable = meta.Controllable;
+                    official = true;
                 }
                 else
                 {
                     CloneProfile.TryResolveEngineFromWeaponName(CloneProfile.StripLegacyPrefix(name!), out engine);
+                    official = CloneProfile.IsRcDisplayName(name);
                 }
             }
             catch
@@ -103,6 +115,7 @@ namespace MissileCameraRemoteControl.Control
                 SourceMountKey = sourceKey,
                 BackupSeeker = backup,
                 Controllable = controllable,
+                OfficialClone = official,
                 OwnerId = ownerId,
                 EnqueueTime = Time.unscaledTime
             };
@@ -123,8 +136,7 @@ namespace MissileCameraRemoteControl.Control
         {
             if (string.IsNullOrEmpty(displayName))
                 return;
-            if (!CloneProfile.IsRcDisplayName(displayName)
-                && !CloneProfile.TryGetGuidanceFromRcName(displayName, out _))
+            if (!CloneProfile.IsRcDisplayName(displayName))
                 return;
             _forcedNames.Enqueue(displayName!);
         }
@@ -191,9 +203,7 @@ namespace MissileCameraRemoteControl.Control
             {
                 WeaponInfo? info = MissileAccess.GetMissileInfo(missile);
                 string? name = info != null ? info.weaponName : null;
-                if (string.IsNullOrEmpty(name))
-                    return;
-                if (!CloneProfile.IsRcDisplayName(name) && !CloneProfile.TryGetGuidanceFromRcName(name, out _))
+                if (string.IsNullOrEmpty(name) || !CloneProfile.IsRcDisplayName(name))
                     return;
                 ApplyDisplayName(missile, name!);
             }
@@ -257,6 +267,9 @@ namespace MissileCameraRemoteControl.Control
                 tag.SourceMountKey = pending.SourceMountKey ?? string.Empty;
                 tag.BackupSeekerType = pending.BackupSeeker ?? string.Empty;
                 tag.Controllable = pending.Controllable;
+                tag.OfficialClone = pending.OfficialClone
+                    || CloneProfile.IsRcCloneKey(tag.SourceMountKey)
+                    || CloneProfile.IsOfficialRcIdentity(pending.Info?.weaponName, tag.SourceMountKey);
 
                 if (string.IsNullOrEmpty(tag.BackupSeekerType))
                 {
@@ -294,9 +307,8 @@ namespace MissileCameraRemoteControl.Control
             {
                 WeaponInfo? info = MissileAccess.GetMissileInfo(missile);
                 string? name = info != null ? info.weaponName : null;
-                if (string.IsNullOrEmpty(name))
-                    return;
-                if (!CloneProfile.IsRcDisplayName(name) && !CloneProfile.TryGetGuidanceFromRcName(name, out _))
+                // Whitelist display names only — bare [DL]/[SATCOM] prefixes do not count.
+                if (string.IsNullOrEmpty(name) || !CloneProfile.IsRcDisplayName(name))
                     return;
 
                 CloneProfile.TryGetGuidanceFromRcName(name, out RcGuidanceKind guidance);
@@ -307,6 +319,7 @@ namespace MissileCameraRemoteControl.Control
                 tag.GuidanceLabel = GuidanceLabels.For(guidance);
                 tag.Engine = engine;
                 tag.Controllable = !CloneProfile.IsPassiveShellDisplayName(name);
+                tag.OfficialClone = true;
                 ApplyDisplayName(missile, name!);
                 MissileAccess.InvalidateRcMissileCache(missile);
                 if (tag.Controllable)

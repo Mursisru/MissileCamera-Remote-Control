@@ -1,5 +1,6 @@
 using HarmonyLib;
 using MissileCameraRemoteControl.Access;
+using MissileCameraRemoteControl.Control;
 
 namespace MissileCameraRemoteControl.HarmonyPatches
 {
@@ -48,7 +49,8 @@ namespace MissileCameraRemoteControl.HarmonyPatches
             {
                 if (__instance == null)
                     return true;
-                if (!MissileAccess.IsRcMissile(__instance))
+                if (!MissileAccess.IsRcMissile(__instance)
+                    && !RcSeekSkipSet.ContainsMissile(__instance))
                     return true;
                 if (RcDetonateGate.IsAllowed)
                     return true;
@@ -69,7 +71,9 @@ namespace MissileCameraRemoteControl.HarmonyPatches
         {
             try
             {
-                return __instance == null || !MissileAccess.IsRcMissile(__instance);
+                return __instance == null
+                    || (!MissileAccess.IsRcMissile(__instance)
+                        && !RcSeekSkipSet.ContainsMissile(__instance));
             }
             catch
             {

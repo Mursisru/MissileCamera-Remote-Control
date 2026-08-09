@@ -93,8 +93,7 @@ namespace MissileCameraRemoteControl.HarmonyPatches
                 if (string.IsNullOrEmpty(name))
                     return;
 
-                bool isRc = CloneProfile.IsRcDisplayName(name)
-                    || CloneProfile.TryGetGuidanceFromRcName(name, out _);
+                bool isRc = CloneProfile.IsRcDisplayName(name);
                 if (!isRc)
                     return;
 
@@ -116,6 +115,7 @@ namespace MissileCameraRemoteControl.HarmonyPatches
             if (!CloneProfile.TryResolveEngineFromWeaponName(bare, out tag.Engine))
                 tag.Engine = RcEngineKind.Jet;
             tag.Controllable = !CloneProfile.IsPassiveShellDisplayName(name);
+            tag.OfficialClone = true;
 
             MissileSeeker? seeker = MissileAccess.GetSeeker(missile) ?? missile.GetComponent<MissileSeeker>();
             tag.BackupSeekerType = seeker != null ? seeker.GetSeekerType() : string.Empty;
@@ -123,8 +123,7 @@ namespace MissileCameraRemoteControl.HarmonyPatches
                 tag.BackupSeekerType = seeker.GetType().Name;
 
             LaunchRcCapture.TryApplyNameFromMissileInfo(missile);
-            if (!string.IsNullOrEmpty(name)
-                && (CloneProfile.IsRcDisplayName(name) || CloneProfile.TryGetGuidanceFromRcName(name, out _)))
+            if (!string.IsNullOrEmpty(name) && CloneProfile.IsRcDisplayName(name))
                 LaunchRcCapture.ApplyDisplayName(missile, name);
 
             MissileAccess.InvalidateRcMissileCache(missile);

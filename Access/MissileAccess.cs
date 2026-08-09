@@ -243,15 +243,23 @@ namespace MissileCameraRemoteControl.Access
 
         private static bool ResolveIsRcMissile(Missile missile)
         {
-            if (missile.GetComponent<RcMissileTag>() != null)
-                return true;
             try
             {
+                RcMissileTag? tag = missile.GetComponent<RcMissileTag>();
+                string? name = null;
                 WeaponInfo? info = GetMissileInfo(missile);
-                if (info == null || string.IsNullOrEmpty(info.weaponName))
-                    return false;
-                return CloneProfile.IsRcDisplayName(info.weaponName)
-                    || CloneProfile.TryGetGuidanceFromRcName(info.weaponName, out _);
+                if (info != null)
+                    name = info.weaponName;
+
+                if (tag != null)
+                {
+                    if (tag.OfficialClone || CloneProfile.IsRcCloneKey(tag.SourceMountKey))
+                        return true;
+                    return CloneProfile.IsOfficialRcIdentity(name, tag.SourceMountKey);
+                }
+
+                // Name-only recovery — whitelist display names only (no bare [DL] prefix).
+                return CloneProfile.IsRcDisplayName(name);
             }
             catch
             {
@@ -267,23 +275,39 @@ namespace MissileCameraRemoteControl.Access
             _rcMissileCache.Remove(missile.GetInstanceID());
         }
 
-        /// <summary>Player-remote-capable RC clones (respects RcMissileTag.Controllable).</summary>
+        /// <summary>
+        /// Player remote stick allowed.
+        /// Default: official RC clones only. Config AllowAnyMunition → any living missile (caller still gates authority).
+        /// </summary>
         internal static bool IsRcControllable(Missile? missile)
         {
-            if (!IsRcMissile(missile))
+            if (missile == null || missile.disabled)
                 return false;
+
             try
             {
-                RcMissileTag? tag = missile!.GetComponent<RcMissileTag>();
-                if (tag != null)
-                    return tag.Controllable;
+                if (RcConfig.AllowAnyMunition.Value)
+                    return true;
+
+                if (!IsRcMissile(missile))
+                    return false;
+
+                RcMissileTag? tag = missile.GetComponent<RcMissileTag>();
+                if (tag != null && !tag.Controllable)
+                    return false;
+
+                string? name = null;
+                WeaponInfo? info = GetMissileInfo(missile);
+                if (info != null)
+                    name = info.weaponName;
+                string source = tag != null ? tag.SourceMountKey : string.Empty;
+                return CloneProfile.IsOfficialRcIdentity(name, source)
+                    || (tag != null && tag.OfficialClone);
             }
             catch
             {
                 return false;
             }
-
-            return true;
         }
     }
 }

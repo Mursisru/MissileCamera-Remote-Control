@@ -70,6 +70,17 @@ namespace MissileCameraRemoteControl.Config
             return false;
         }
 
+        /// <summary>
+        /// Official RC identity for player stick / Seek gates — not bare [DL]/[SATCOM] prefixes
+        /// (third-party mods must not become controllable by naming alone).
+        /// </summary>
+        internal static bool IsOfficialRcIdentity(string? weaponName, string? sourceMountKey)
+        {
+            if (IsRcCloneKey(sourceMountKey))
+                return true;
+            return IsRcDisplayName(weaponName);
+        }
+
         /// <summary>Legacy helper — 76mm DLG is now player-controllable; always false.</summary>
         internal static bool IsPassiveShellDisplayName(string? name) => false;
 

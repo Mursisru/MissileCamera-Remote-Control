@@ -64,7 +64,7 @@ namespace MissileCameraRemoteControl.Cloning
                 return false;
 
             return CloneProfile.IsRcDisplayName(info.weaponName)
-                || CloneProfile.TryGetGuidanceFromRcName(info.weaponName, out _);
+                || CloneProfile.IsRcCloneKey(key);
         }
 
         private static float ResolveStockRoundCost(WeaponMount mount)

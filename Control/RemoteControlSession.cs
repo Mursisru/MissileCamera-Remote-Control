@@ -156,8 +156,10 @@ namespace MissileCameraRemoteControl.Control
                         return followed;
 
                     // Do not silently Take a different missile while FS shows another — that felt like "T does nothing".
-                    RcPlugin.ModLogger?.LogInfo(
-                        $"RC: FS missile '{followed.unitName ?? followed.name}' is not an RC clone — equip a DL/SATCOM mount.");
+                    string hint = RcConfig.AllowAnyMunition.Value
+                        ? "RC: FS munition is not allied / LocalSim — cannot take."
+                        : $"RC: FS missile '{followed.unitName ?? followed.name}' is not an official RC clone — equip a DL/SATCOM mount (or enable General.AllowAnyMunition).";
+                    RcPlugin.ModLogger?.LogInfo(hint);
                     return null;
                 }
             }
@@ -272,7 +274,9 @@ namespace MissileCameraRemoteControl.Control
             _pool.Clear();
             try
             {
-                if (RcLivingRcRegistry.TryCopyAlive(_pool))
+                bool anyMunition = RcConfig.AllowAnyMunition.Value;
+
+                if (!anyMunition && RcLivingRcRegistry.TryCopyAlive(_pool))
                 {
                     FilterPoolInPlace();
                     if (_pool.Count > 0)
@@ -280,7 +284,7 @@ namespace MissileCameraRemoteControl.Control
                     _pool.Clear();
                 }
 
-                // Fallback when registry empty (join mid-mission / missed stamp).
+                // Fallback / AllowAny: scan world missiles.
                 Missile[] all = Object.FindObjectsOfType<Missile>();
                 for (int i = 0; i < all.Length; i++)
                 {
@@ -292,7 +296,8 @@ namespace MissileCameraRemoteControl.Control
                     if (!AuthorityGate.CanControl(m) || !AuthorityGate.IsAllied(m))
                         continue;
                     _pool.Add(m);
-                    RcLivingRcRegistry.Notify(m);
+                    if (!anyMunition)
+                        RcLivingRcRegistry.Notify(m);
                 }
             }
             catch
