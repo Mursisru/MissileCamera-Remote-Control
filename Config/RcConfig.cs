@@ -33,6 +33,7 @@ namespace MissileCameraRemoteControl.Config
         internal static ConfigEntry<KeyboardShortcut> AimPitchUp { get; private set; } = null!;
         internal static ConfigEntry<KeyboardShortcut> AimPitchDown { get; private set; } = null!;
         internal static ConfigEntry<KeyboardShortcut> FormationFollow { get; private set; } = null!;
+        internal static ConfigEntry<bool> AutoFormationFollow { get; private set; } = null!;
 
         internal static void Bind(ConfigFile config)
         {
@@ -79,6 +80,8 @@ namespace MissileCameraRemoteControl.Config
                 "Hold afterburner / turbo-boost.");
             FormationFollow = config.Bind("Keybinds", "FormationFollow", new KeyboardShortcut(KeyCode.P),
                 "Toggle formation: other allied RC missiles follow the controlled lead.");
+            AutoFormationFollow = config.Bind("Control", "AutoFormationFollow", false,
+                "If true, engage formation follow automatically when taking RC (P still toggles).");
 
             // Used only when AimInputMode = Custom.
             AimYawLeft = config.Bind("CustomAim", "AimYawLeft", new KeyboardShortcut(KeyCode.A),

@@ -1,4 +1,5 @@
 using System.Reflection;
+using MissileCameraRemoteControl.Access;
 using MissileCameraRemoteControl.Config;
 using MissileCameraRemoteControl.Network;
 using MissileCameraRemoteControl.Vfx;
@@ -69,7 +70,7 @@ namespace MissileCameraRemoteControl.Control
                 return;
             }
 
-            _boost = KeybindPoll.IsHeld(RcConfig.Boost.Value);
+            ResolveBoost(missile);
 
             if (link == RcLinkLevel.Degraded)
             {
@@ -89,7 +90,6 @@ namespace MissileCameraRemoteControl.Control
             }
 
             ApplyUiThrottle(missile, force: false);
-            // Publish applies VFX on edge + net — do not call SetBoost separately.
             RcBoostStateSync.Publish(missile, _boost);
         }
 
@@ -106,13 +106,18 @@ namespace MissileCameraRemoteControl.Control
             }
             else
             {
-                // FixedUpdate can run before Update — re-poll AB for Motor.Thrust same frame.
-                _boost = KeybindPoll.IsHeld(RcConfig.Boost.Value);
+                ResolveBoost(missile);
                 if (link == RcLinkLevel.Degraded)
                     _throttle = 1f;
             }
 
             ApplyUiThrottle(missile, force: false);
+        }
+
+        private static void ResolveBoost(Missile missile)
+        {
+            // AB only from afterburner bind + fuel — NEVER from formation FOLLOW.
+            _boost = KeybindPoll.IsHeld(RcConfig.Boost.Value) && MissileAccess.HasMotorFuel(missile);
         }
 
         internal static bool TryGetMotorOverride(Missile missile, out float effectiveThrottle, out float burnMult)
@@ -134,17 +139,21 @@ namespace MissileCameraRemoteControl.Control
             }
 
             float thr = link == RcLinkLevel.Degraded ? 1f : _throttle;
+            if (RcFormationFollow.IsFollower(missile))
+                thr = 1f;
+
+            bool boost = _boost && MissileAccess.HasMotorFuel(missile);
 
             if (_engine == RcEngineKind.Jet)
             {
-                effectiveThrottle = _boost
+                effectiveThrottle = boost
                     ? Mathf.Max(0.01f, thr) * Mathf.Max(1f, RcConfig.JetBoostThrottle.Value)
                     : thr;
-                burnMult = _boost ? Mathf.Max(0.01f, RcConfig.JetBoostBurnMult.Value) : 1f;
+                burnMult = boost ? Mathf.Max(0.01f, RcConfig.JetBoostBurnMult.Value) : 1f;
                 return true;
             }
 
-            if (_boost)
+            if (boost)
             {
                 effectiveThrottle = Mathf.Max(0.01f, thr) * Mathf.Max(1f, RcConfig.SolidBoostThrottle.Value);
                 burnMult = Mathf.Max(0.01f, RcConfig.SolidBoostBurnMult.Value);

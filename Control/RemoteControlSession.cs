@@ -102,6 +102,7 @@ namespace MissileCameraRemoteControl.Control
             RcUprightAssist.ResetSaved();
             MissileAccess.ClearProxyLatch();
             AfterburnerVfxBinder.ClearCache();
+            RcStatusHud.DestroyUi();
             RcFormationFollow.Clear();
             RcSeekSkipSet.Clear();
             if (restoreTargets)
@@ -199,6 +200,8 @@ namespace MissileCameraRemoteControl.Control
             RcLinkQuality.Evaluate(missile);
             RcSeekSkipSet.Rebuild();
             RcLivingRcRegistry.Notify(missile);
+            if (RcConfig.AutoFormationFollow.Value)
+                RcFormationFollow.EngageFromTake(missile);
             RcPlugin.ModLogger?.LogInfo($"RC engaged (FS): {missile.name}");
         }
 
@@ -236,7 +239,10 @@ namespace MissileCameraRemoteControl.Control
                 RcFormationFollow.ToggleFromControlled();
 
             if (!IsActive || _controlled == null)
+            {
+                RcStatusHud.Tick();
                 return;
+            }
 
             // Lost: keep stick (thr like Degraded). Auto-Release handed aim to Seek near jam/targets.
             RcLinkQuality.Evaluate(_controlled);
@@ -246,6 +252,7 @@ namespace MissileCameraRemoteControl.Control
             RcRetargetController.Tick(_controlled);
             MouseGuidanceController.Tick(_controlled);
             ThrottleController.Tick(_controlled);
+            RcStatusHud.Tick();
         }
 
         internal static void FixedTick()

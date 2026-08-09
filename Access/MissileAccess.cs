@@ -47,6 +47,22 @@ namespace MissileCameraRemoteControl.Access
 
         internal static void ClearProxyLatch() => _proxyClearedIds.Clear();
 
+        /// <summary>True while any motor still has burn/fuel left (AB meaningless at 0% FUEL).</summary>
+        internal static bool HasMotorFuel(Missile? missile)
+        {
+            if (missile == null || missile.disabled)
+                return false;
+            try
+            {
+                float rem = missile.GetRemainingBurnTime();
+                return !float.IsNaN(rem) && !float.IsInfinity(rem) && rem > 0.05f;
+            }
+            catch
+            {
+                return false;
+            }
+        }
+
         /// <summary>
         /// Null private ProxyFuse — while RC, near-miss CPA airburst must not fire
         /// (vanilla Detonate from DetectCollisions when ConditionsMet).
