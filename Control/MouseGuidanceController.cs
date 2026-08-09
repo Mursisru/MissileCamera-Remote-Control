@@ -22,6 +22,7 @@ namespace MissileCameraRemoteControl.Control
         private static Missile? _lastMissile;
         private static float _pendingYawDeg;
         private static float _pendingPitchDeg;
+        private static int _aimWrittenFrame = -1;
         private static readonly Vector3[] _viewCorners = new Vector3[4];
 
         internal static Vector2 GetReticleViewport() => _lastStableViewport;
@@ -50,6 +51,7 @@ namespace MissileCameraRemoteControl.Control
             _lastMissile = null;
             _pendingYawDeg = 0f;
             _pendingPitchDeg = 0f;
+            _aimWrittenFrame = -1;
             FsAimReticle.SetVisible(false);
         }
 
@@ -118,7 +120,7 @@ namespace MissileCameraRemoteControl.Control
             }
         }
 
-        /// <summary>After MC SyncPose — apply mouse, project marker (aim already reinforced on Steering).</summary>
+        /// <summary>After MC SyncPose — project reticle; WriteAim only if mouse pending (Steering owns aim).</summary>
         internal static void LateProject()
         {
             Missile? missile = _lastMissile;
@@ -131,8 +133,12 @@ namespace MissileCameraRemoteControl.Control
             Transform mt = missile.transform;
             Transform view = feed != null ? feed.transform : mt;
 
+            bool hadPending = _pendingYawDeg * _pendingYawDeg + _pendingPitchDeg * _pendingPitchDeg > 1e-10f;
             ConsumePendingAndEnsureInit(view, mt);
-            WriteAimpoint(missile, mt);
+
+            // Steering Prefix is aim authority vs GSN; EOF only rewrites if new stick input since Fixed.
+            if (hadPending || _aimWrittenFrame != Time.frameCount)
+                WriteAimpoint(missile, mt);
 
             Vector3 projectPoint = view.position + _worldAimDir * ProjectDistance;
             if (feed != null)
@@ -142,7 +148,8 @@ namespace MissileCameraRemoteControl.Control
                     && !float.IsNaN(vp.x) && !float.IsNaN(vp.y)
                     && !float.IsInfinity(vp.x) && !float.IsInfinity(vp.y))
                 {
-                    _lastStableViewport = new Vector2(vp.x, vp.y);
+                    _lastStableViewport.x = vp.x;
+                    _lastStableViewport.y = vp.y;
                     FsAimReticle.SetFromViewport(vp.x, vp.y, inFront: true);
                     return;
                 }
@@ -207,6 +214,7 @@ namespace MissileCameraRemoteControl.Control
             try
             {
                 missile.SetAimpoint(aimLocal.ToGlobalPosition(), Vector3.zero);
+                _aimWrittenFrame = Time.frameCount;
             }
             catch
             {

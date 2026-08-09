@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Reflection;
 using MissileCameraRemoteControl.Config;
 using UnityEngine;
@@ -39,7 +40,12 @@ namespace MissileCameraRemoteControl.Access
         private static readonly MethodInfo? ThrustMethod =
             MotorType?.GetMethod("Thrust", BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic);
 
+        private static readonly HashSet<int> _proxyClearedIds = new HashSet<int>(8);
+        private static readonly Dictionary<int, bool> _rcMissileCache = new Dictionary<int, bool>(64);
+
         internal static MethodInfo? MotorThrustMethod => ThrustMethod;
+
+        internal static void ClearProxyLatch() => _proxyClearedIds.Clear();
 
         /// <summary>
         /// Null private ProxyFuse — while RC, near-miss CPA airburst must not fire
@@ -59,6 +65,18 @@ namespace MissileCameraRemoteControl.Access
             {
                 // ignore
             }
+        }
+
+        /// <summary>Hot path: skip GetValue after first clear (SetProxyFuse blocked for RC).</summary>
+        internal static void ClearProxyFuseOnce(Missile? missile)
+        {
+            if (missile == null)
+                return;
+            int id = missile.GetInstanceID();
+            if (_proxyClearedIds.Contains(id))
+                return;
+            ClearProxyFuse(missile);
+            _proxyClearedIds.Add(id);
         }
 
         internal static Array? GetMotors(Missile missile)
@@ -197,6 +215,18 @@ namespace MissileCameraRemoteControl.Access
         {
             if (missile == null)
                 return false;
+
+            int id = missile.GetInstanceID();
+            if (_rcMissileCache.TryGetValue(id, out bool cached))
+                return cached;
+
+            bool result = ResolveIsRcMissile(missile);
+            _rcMissileCache[id] = result;
+            return result;
+        }
+
+        private static bool ResolveIsRcMissile(Missile missile)
+        {
             if (missile.GetComponent<RcMissileTag>() != null)
                 return true;
             try
@@ -211,6 +241,14 @@ namespace MissileCameraRemoteControl.Access
             {
                 return false;
             }
+        }
+
+        /// <summary>Call after stamping a new RC tag so Detonate gate sees it without stale false cache.</summary>
+        internal static void InvalidateRcMissileCache(Missile? missile)
+        {
+            if (missile == null)
+                return;
+            _rcMissileCache.Remove(missile.GetInstanceID());
         }
 
         /// <summary>Player-remote-capable RC clones (excludes 76mm DLG Shell).</summary>

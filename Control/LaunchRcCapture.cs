@@ -272,6 +272,10 @@ namespace MissileCameraRemoteControl.Control
                 if (pending.Info != null && !string.IsNullOrEmpty(pending.Info.weaponName))
                     ApplyDisplayName(missile, pending.Info.weaponName);
 
+                MissileAccess.InvalidateRcMissileCache(missile);
+                if (pending.Controllable)
+                    RcLivingRcRegistry.Notify(missile);
+
                 RcPlugin.ModLogger?.LogInfo(
                     $"RC launch stamped: {pending.Info?.weaponName} ({pending.Guidance}/{pending.Engine}, ctrl={pending.Controllable})");
             }
@@ -304,6 +308,9 @@ namespace MissileCameraRemoteControl.Control
                 tag.Engine = engine;
                 tag.Controllable = !CloneProfile.IsPassiveShellDisplayName(name);
                 ApplyDisplayName(missile, name!);
+                MissileAccess.InvalidateRcMissileCache(missile);
+                if (tag.Controllable)
+                    RcLivingRcRegistry.Notify(missile);
             }
             catch
             {

@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 using System.Reflection;
 using MissileCameraRemoteControl.Access;
 using UnityEngine;
@@ -6,7 +7,7 @@ namespace MissileCameraRemoteControl.Control
 {
     /// <summary>
     /// While RC: force cruise seeker into inert mid-course state.
-    /// Write fields only when values differ (Steering prefix path).
+    /// Latch per missile after first successful write (Seek is skipped — fields stay false).
     /// </summary>
     internal static class RcSeekerSuppress
     {
@@ -16,13 +17,15 @@ namespace MissileCameraRemoteControl.Control
         private static readonly FieldInfo? CruiseGuidance =
             typeof(OpticalSeekerCruiseMissile).GetField("guidance", BindingFlags.Instance | BindingFlags.NonPublic);
 
-        private static int _cachedMissileId;
-        private static OpticalSeekerCruiseMissile? _cachedCruise;
+        private static readonly Dictionary<int, OpticalSeekerCruiseMissile?> _cruiseById =
+            new Dictionary<int, OpticalSeekerCruiseMissile?>(8);
+
+        private static readonly HashSet<int> _inertIds = new HashSet<int>(8);
 
         internal static void Reset()
         {
-            _cachedMissileId = 0;
-            _cachedCruise = null;
+            _cruiseById.Clear();
+            _inertIds.Clear();
         }
 
         internal static void Tick(Missile missile)
@@ -30,16 +33,23 @@ namespace MissileCameraRemoteControl.Control
             if (missile == null || missile.disabled)
                 return;
 
-            OpticalSeekerCruiseMissile? cruise = ResolveCruise(missile);
-            if (cruise == null)
+            int id = missile.GetInstanceID();
+            if (_inertIds.Contains(id))
                 return;
+
+            OpticalSeekerCruiseMissile? cruise = ResolveCruise(missile, id);
+            if (cruise == null)
+            {
+                _inertIds.Add(id);
+                return;
+            }
 
             try
             {
-                if (CruiseTerminal != null && CruiseTerminal.GetValue(cruise) is true)
-                    CruiseTerminal.SetValue(cruise, false);
-                if (CruiseGuidance != null && CruiseGuidance.GetValue(cruise) is true)
-                    CruiseGuidance.SetValue(cruise, false);
+                // Direct SetValue — Seek skip means they stay false; avoid GetValue boxing.
+                CruiseTerminal?.SetValue(cruise, false);
+                CruiseGuidance?.SetValue(cruise, false);
+                _inertIds.Add(id);
             }
             catch
             {
@@ -47,18 +57,17 @@ namespace MissileCameraRemoteControl.Control
             }
         }
 
-        private static OpticalSeekerCruiseMissile? ResolveCruise(Missile missile)
+        private static OpticalSeekerCruiseMissile? ResolveCruise(Missile missile, int id)
         {
-            int id = missile.GetInstanceID();
-            if (id == _cachedMissileId && _cachedCruise != null)
-                return _cachedCruise;
+            if (_cruiseById.TryGetValue(id, out OpticalSeekerCruiseMissile? cached))
+                return cached;
 
-            _cachedMissileId = id;
-            _cachedCruise = null;
+            OpticalSeekerCruiseMissile? cruise = null;
             MissileSeeker? seeker = MissileAccess.GetSeeker(missile) ?? missile.GetComponent<MissileSeeker>();
-            if (seeker is OpticalSeekerCruiseMissile cruise)
-                _cachedCruise = cruise;
-            return _cachedCruise;
+            if (seeker is OpticalSeekerCruiseMissile c)
+                cruise = c;
+            _cruiseById[id] = cruise;
+            return cruise;
         }
     }
 }

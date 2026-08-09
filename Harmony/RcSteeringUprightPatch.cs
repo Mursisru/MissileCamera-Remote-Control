@@ -25,8 +25,7 @@ namespace MissileCameraRemoteControl.HarmonyPatches
 
                 harmony.Patch(
                     steering,
-                    prefix: new HarmonyMethod(typeof(RcSteeringUprightPatch), nameof(Prefix)),
-                    postfix: new HarmonyMethod(typeof(RcSteeringUprightPatch), nameof(Postfix)));
+                    prefix: new HarmonyMethod(typeof(RcSteeringUprightPatch), nameof(Prefix)));
                 log?.LogInfo("Missile.Steering RC aim reinforce + suppress patched.");
             }
             catch (System.Exception ex)
@@ -37,7 +36,8 @@ namespace MissileCameraRemoteControl.HarmonyPatches
 
         private static void Prefix(Missile __instance)
         {
-            if (__instance == null)
+            // Hot path: no RC / formation → exit; world missiles never hit IsFollower O(n).
+            if (__instance == null || !RcSeekSkipSet.HasAny)
                 return;
 
             try
@@ -59,11 +59,6 @@ namespace MissileCameraRemoteControl.HarmonyPatches
             {
                 // ignore
             }
-        }
-
-        private static void Postfix(Missile __instance)
-        {
-            RcUprightAssist.AfterSteering(__instance);
         }
     }
 }

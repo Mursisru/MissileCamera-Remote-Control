@@ -1,26 +1,15 @@
 namespace MissileCameraRemoteControl.Control
 {
     /// <summary>
-    /// Upright assist intentionally inert.
-    /// GitHub boosted uprightPreference + roll inject → corkscrew around aim / FS twitch.
-    /// Stock Steering handles roll; we do not rewrite uprightPreference under RC.
+    /// Upright assist intentionally inert (corkscrew if enabled).
+    /// Stock Steering handles roll; hooks kept for Take/Release call sites.
     /// </summary>
     internal static class RcUprightAssist
     {
-        internal static void OnTakeControl(Missile missile)
-        {
-        }
+        internal static void OnTakeControl(Missile missile) { }
 
-        internal static void OnRelease(Missile? missile)
-        {
-        }
+        internal static void OnRelease(Missile? missile) { }
 
-        internal static void ResetSaved()
-        {
-        }
-
-        internal static void AfterSteering(Missile missile)
-        {
-        }
+        internal static void ResetSaved() { }
     }
 }

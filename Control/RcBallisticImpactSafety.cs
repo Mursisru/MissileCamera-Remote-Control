@@ -91,6 +91,7 @@ namespace MissileCameraRemoteControl.Control
 
         internal static void FixedTick(Missile missile)
         {
+            // Intentionally empty — burial/CCD removed; kept for API stability.
         }
 
         private static void EnsureCached(Missile missile)

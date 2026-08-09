@@ -13,15 +13,24 @@ namespace MissileCameraRemoteControl.Control
         private static Missile? _controlled;
         private static readonly List<Missile> _pool = new List<Missile>(32);
 
+        // Frame-cached IsActive / CanControl (invalidated in BeginFrame via RcFrameCache).
+        private static int _gateFrame = -1;
+        private static bool _cachedIsActive;
+        private static bool _cachedCanControl;
+        private static Missile? _cachedCanControlMissile;
+
         internal static Missile? Controlled => _controlled;
 
         internal static IReadOnlyList<Missile> Pool => _pool;
 
-        internal static bool IsActive =>
-            _controlled != null
-            && !_controlled.disabled
-            && AuthorityGate.CanControl(_controlled)
-            && MissileCameraFsAccess.IsFullscreenActive;
+        internal static bool IsActive
+        {
+            get
+            {
+                EnsureGateFrame();
+                return _cachedIsActive;
+            }
+        }
 
         internal static bool IsControlling(Missile? missile)
         {
@@ -32,6 +41,34 @@ namespace MissileCameraRemoteControl.Control
         internal static bool OwnsMissile(Missile? missile)
         {
             return missile != null && ReferenceEquals(missile, _controlled) && !_controlled.disabled;
+        }
+
+        private static void EnsureGateFrame()
+        {
+            int f = Time.frameCount;
+            if (f == _gateFrame)
+                return;
+            _gateFrame = f;
+            _cachedCanControlMissile = null;
+
+            if (_controlled == null || _controlled.disabled)
+            {
+                _cachedIsActive = false;
+                _cachedCanControl = false;
+                return;
+            }
+
+            _cachedCanControl = AuthorityGate.CanControl(_controlled);
+            _cachedCanControlMissile = _controlled;
+            _cachedIsActive = _cachedCanControl && MissileCameraFsAccess.IsFullscreenActive;
+        }
+
+        internal static bool CachedCanControl(Missile missile)
+        {
+            EnsureGateFrame();
+            if (ReferenceEquals(missile, _cachedCanControlMissile))
+                return _cachedCanControl;
+            return AuthorityGate.CanControl(missile);
         }
 
         internal static void Clear()
@@ -54,6 +91,7 @@ namespace MissileCameraRemoteControl.Control
                     RcPlugin.ModLogger?.LogInfo($"RC released: {_controlled.name}");
             }
             _controlled = null;
+            _gateFrame = -1;
             FsAimReticle.SetVisible(false);
             MouseGuidanceController.Reset();
             ThrottleController.Reset();
@@ -62,7 +100,10 @@ namespace MissileCameraRemoteControl.Control
             RcSeekerSuppress.Reset();
             RcBallisticImpactSafety.Reset();
             RcUprightAssist.ResetSaved();
+            MissileAccess.ClearProxyLatch();
+            AfterburnerVfxBinder.ClearCache();
             RcFormationFollow.Clear();
+            RcSeekSkipSet.Clear();
             if (restoreTargets)
                 RcAircraftTargetSnapshot.Restore();
             else
@@ -145,6 +186,7 @@ namespace MissileCameraRemoteControl.Control
             RcMissilePickerUi.Close();
             Release(silent: true, restoreTargets: false);
             _controlled = missile;
+            _gateFrame = -1;
             MouseGuidanceController.Reset();
             RcLinkQuality.Reset();
             FsAimReticle.SetVisible(true);
@@ -155,6 +197,8 @@ namespace MissileCameraRemoteControl.Control
             RcSeekerSuppress.Tick(missile);
             RcWarheadSafety.Tick(missile);
             RcLinkQuality.Evaluate(missile);
+            RcSeekSkipSet.Rebuild();
+            RcLivingRcRegistry.Notify(missile);
             RcPlugin.ModLogger?.LogInfo($"RC engaged (FS): {missile.name}");
         }
 
@@ -210,9 +254,6 @@ namespace MissileCameraRemoteControl.Control
             if (m == null || m.disabled)
                 return;
 
-            if (OwnsMissile(m))
-                RcBallisticImpactSafety.FixedTick(m);
-
             if (!IsActive)
                 return;
             ThrottleController.Reinforce(m);
@@ -224,6 +265,15 @@ namespace MissileCameraRemoteControl.Control
             _pool.Clear();
             try
             {
+                if (RcLivingRcRegistry.TryCopyAlive(_pool))
+                {
+                    FilterPoolInPlace();
+                    if (_pool.Count > 0)
+                        return;
+                    _pool.Clear();
+                }
+
+                // Fallback when registry empty (join mid-mission / missed stamp).
                 Missile[] all = Object.FindObjectsOfType<Missile>();
                 for (int i = 0; i < all.Length; i++)
                 {
@@ -235,11 +285,27 @@ namespace MissileCameraRemoteControl.Control
                     if (!AuthorityGate.CanControl(m) || !AuthorityGate.IsAllied(m))
                         continue;
                     _pool.Add(m);
+                    RcLivingRcRegistry.Notify(m);
                 }
             }
             catch
             {
                 _pool.Clear();
+            }
+        }
+
+        private static void FilterPoolInPlace()
+        {
+            for (int i = _pool.Count - 1; i >= 0; i--)
+            {
+                Missile m = _pool[i];
+                if (m == null || m.disabled
+                    || !MissileAccess.IsRcControllable(m)
+                    || !AuthorityGate.CanControl(m)
+                    || !AuthorityGate.IsAllied(m))
+                {
+                    _pool.RemoveAt(i);
+                }
             }
         }
 

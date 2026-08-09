@@ -36,6 +36,8 @@ namespace MissileCameraRemoteControl.Control
         private static Missile? _lead;
         private static bool _active;
         private static readonly List<FollowerState> _followers = new List<FollowerState>(16);
+        private static readonly HashSet<int> _followerIds = new HashSet<int>(16);
+        private static readonly Dictionary<int, int> _idToIndex = new Dictionary<int, int>(16);
 
         internal static bool IsActive => _active && _lead != null && !_lead.disabled;
 
@@ -47,13 +49,20 @@ namespace MissileCameraRemoteControl.Control
                 return false;
             if (ReferenceEquals(missile, _lead))
                 return false;
+            return _followerIds.Contains(missile.GetInstanceID());
+        }
+
+        /// <summary>Used by RcSeekSkipSet rebuild.</summary>
+        internal static void AppendFollowerMissiles(System.Action<Missile> add)
+        {
+            if (!_active || add == null)
+                return;
             for (int i = 0; i < _followers.Count; i++)
             {
-                if (ReferenceEquals(_followers[i].Missile, missile))
-                    return true;
+                Missile? m = _followers[i].Missile;
+                if (m != null && !m.disabled)
+                    add(m);
             }
-
-            return false;
         }
 
         internal static void Clear()
@@ -61,6 +70,13 @@ namespace MissileCameraRemoteControl.Control
             _active = false;
             _lead = null;
             _followers.Clear();
+            _followerIds.Clear();
+            _idToIndex.Clear();
+            // Don't Rebuild here during Release (Controlled already null) — Session rebuilds on Take.
+            if (RemoteControlSession.Controlled != null)
+                RcSeekSkipSet.Rebuild();
+            else
+                RcSeekSkipSet.Clear();
         }
 
         internal static void ToggleFromControlled()
@@ -127,6 +143,9 @@ namespace MissileCameraRemoteControl.Control
                 Vector3 local = Quaternion.Inverse(aimFrame) * delta;
                 Vector3 lateral = new Vector3(local.x, local.y, 0f);
 
+                int id = m.GetInstanceID();
+                _idToIndex[id] = _followers.Count;
+                _followerIds.Add(id);
                 _followers.Add(new FollowerState
                 {
                     Missile = m,
@@ -142,6 +161,7 @@ namespace MissileCameraRemoteControl.Control
                 else behindN++;
             }
 
+            RcSeekSkipSet.Rebuild();
             RcPlugin.ModLogger?.LogInfo(
                 $"Formation follow ON — lead={lead.unitName ?? lead.name}, ahead={aheadN}, behind={behindN}");
         }
@@ -191,23 +211,14 @@ namespace MissileCameraRemoteControl.Control
         /// <summary>After Seek: shared direction marker + ahead/behind slot hold.</summary>
         internal static void ReinforceAimpoint(Missile missile)
         {
-            if (!IsFollower(missile) || _lead == null)
+            if (_lead == null || !IsFollower(missile))
                 return;
 
-            FollowerState? found = null;
-            for (int i = 0; i < _followers.Count; i++)
-            {
-                if (ReferenceEquals(_followers[i].Missile, missile))
-                {
-                    found = _followers[i];
-                    break;
-                }
-            }
-
-            if (found == null)
+            if (!_idToIndex.TryGetValue(missile.GetInstanceID(), out int idx)
+                || idx < 0 || idx >= _followers.Count)
                 return;
 
-            FollowerState f = found.Value;
+            FollowerState f = _followers[idx];
             try
             {
                 Vector3 dir = ResolveLeadAimDir();
@@ -314,7 +325,7 @@ namespace MissileCameraRemoteControl.Control
             if (m == null)
                 return;
 
-            MissileAccess.ClearProxyFuse(m);
+            MissileAccess.ClearProxyFuseOnce(m);
 
             float age = 0f;
             try { age = m.timeSinceSpawn; }
@@ -367,12 +378,33 @@ namespace MissileCameraRemoteControl.Control
 
         private static void PruneDeadFollowers()
         {
+            bool changed = false;
             for (int i = _followers.Count - 1; i >= 0; i--)
             {
                 Missile? m = _followers[i].Missile;
                 if (m == null || m.disabled)
+                {
                     _followers.RemoveAt(i);
+                    changed = true;
+                }
             }
+
+            if (!changed)
+                return;
+
+            _followerIds.Clear();
+            _idToIndex.Clear();
+            for (int i = 0; i < _followers.Count; i++)
+            {
+                Missile? m = _followers[i].Missile;
+                if (m == null)
+                    continue;
+                int id = m.GetInstanceID();
+                _followerIds.Add(id);
+                _idToIndex[id] = i;
+            }
+
+            RcSeekSkipSet.Rebuild();
         }
     }
 }

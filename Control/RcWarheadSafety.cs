@@ -41,7 +41,7 @@ namespace MissileCameraRemoteControl.Control
                 _armDone = false;
             }
 
-            Access.MissileAccess.ClearProxyFuse(missile);
+            Access.MissileAccess.ClearProxyFuseOnce(missile);
 
             float age = 0f;
             try

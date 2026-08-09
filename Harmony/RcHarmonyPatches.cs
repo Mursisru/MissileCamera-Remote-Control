@@ -126,65 +126,46 @@ namespace MissileCameraRemoteControl.HarmonyPatches
             if (!string.IsNullOrEmpty(name)
                 && (CloneProfile.IsRcDisplayName(name) || CloneProfile.TryGetGuidanceFromRcName(name, out _)))
                 LaunchRcCapture.ApplyDisplayName(missile, name);
+
+            MissileAccess.InvalidateRcMissileCache(missile);
+            if (tag.Controllable)
+                RcLivingRcRegistry.Notify(missile);
         }
     }
 
     [HarmonyPatch(typeof(MissileSeeker), nameof(MissileSeeker.Seek))]
     internal static class RcSeekPatch
     {
-        private static readonly System.Reflection.FieldInfo? SeekerMissileField =
-            typeof(MissileSeeker).GetField("missile", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Public);
-
+        // Hot path: skip Seek only for seeker IDs in RcSeekSkipSet (no FieldInfo on world missiles).
         public static bool Prefix(MissileSeeker __instance)
         {
-            // Fast path: no RC stick and no formation → never touch seeker fields.
-            if (RemoteControlSession.Controlled == null && !RcFormationFollow.IsActive)
+            if (!RcSeekSkipSet.HasAny)
                 return true;
-
             try
             {
-                if (__instance == null)
-                    return true;
-
-                Missile? missile = null;
-                try
-                {
-                    if (SeekerMissileField != null)
-                        missile = SeekerMissileField.GetValue(__instance) as Missile;
-                }
-                catch
-                {
-                    missile = null;
-                }
-
-                if (missile == null)
-                    missile = __instance.GetComponent<Missile>();
-                if (missile == null)
-                    return true;
-
-                // Skip Seek for RC ownership (not only IsControlling/FS).
-                // Inside terminalRange cruise Seek steals SetAimpoint every FixedUpdate.
-                if (RemoteControlSession.OwnsMissile(missile)
-                    || RcFormationFollow.IsFollower(missile))
-                    return false;
+                return !RcSeekSkipSet.ShouldSkipSeeker(__instance);
             }
             catch
             {
                 return true;
             }
-
-            return true;
         }
     }
 
     /// <summary>
     /// RC afterburner: raise Motor.Thrust throttle + burnRate, and lift Motor.topSpeed
     /// (vanilla skips AddForce when speed &gt;= topSpeed — AB felt dead at cruise Vmax).
+    /// Snapshot base burn/top once per boost edge — avoid GetValue boxing every Thrust.
     /// </summary>
     internal static class RcMotorThrustPatch
     {
         private static float _savedBurn = -1f;
         private static float _savedTop = -1f;
+        private static float _cachedBaseBurn = -1f;
+        private static float _cachedBaseTop = -1f;
+        private static bool _burnCached;
+        private static bool _topCached;
+        private static bool _wasBoost;
 
         public static void Prefix(
             object __instance,
@@ -204,22 +185,50 @@ namespace MissileCameraRemoteControl.HarmonyPatches
 
                 throttle = effectiveThrottle;
 
-                if (burnMult > 1.001f
-                    && MissileAccess.TryGetBurnRate(__instance, out float baseRate)
-                    && baseRate > 0f)
+                bool boost = ThrottleController.BoostActive;
+                if (boost != _wasBoost)
                 {
-                    _savedBurn = baseRate;
-                    MissileAccess.TrySetBurnRate(__instance, baseRate * burnMult);
+                    _burnCached = false;
+                    _topCached = false;
+                    _wasBoost = boost;
                 }
 
-                // Lift Vmax while boosting so AddForce still runs past cruise topSpeed.
-                if (ThrottleController.BoostActive
-                    && MissileAccess.TryGetTopSpeed(__instance, out float top)
-                    && top > 1f
-                    && top < 1e8f)
+                if (burnMult > 1.001f)
                 {
-                    _savedTop = top;
-                    MissileAccess.TrySetTopSpeed(__instance, top * ThrottleController.BoostTopSpeedFactor);
+                    if (!_burnCached)
+                    {
+                        if (MissileAccess.TryGetBurnRate(__instance, out float baseRate) && baseRate > 0f)
+                        {
+                            _cachedBaseBurn = baseRate;
+                            _burnCached = true;
+                        }
+                    }
+
+                    if (_burnCached)
+                    {
+                        _savedBurn = _cachedBaseBurn;
+                        MissileAccess.TrySetBurnRate(__instance, _cachedBaseBurn * burnMult);
+                    }
+                }
+
+                if (boost)
+                {
+                    if (!_topCached)
+                    {
+                        if (MissileAccess.TryGetTopSpeed(__instance, out float top)
+                            && top > 1f && top < 1e8f)
+                        {
+                            _cachedBaseTop = top;
+                            _topCached = true;
+                        }
+                    }
+
+                    if (_topCached)
+                    {
+                        _savedTop = _cachedBaseTop;
+                        MissileAccess.TrySetTopSpeed(
+                            __instance, _cachedBaseTop * ThrottleController.BoostTopSpeedFactor);
+                    }
                 }
             }
             catch
