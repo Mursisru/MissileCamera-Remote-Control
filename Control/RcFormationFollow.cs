@@ -9,18 +9,25 @@ namespace MissileCameraRemoteControl.Control
 {
     /// <summary>
     /// Formation follow (P): lead = controlled RC missile.
-    /// Wingmen copy lead aim direction (parallel) + soft lateral slot hold.
-    /// Never aim at the slot itself (that caused near-self aimpoint → PID thrash).
+    /// Ahead wingmen stay in front of the lead and fly toward the shared direction marker.
+    /// Behind wingmen stay directly behind the lead and also fly toward that marker.
     /// </summary>
     internal static class RcFormationFollow
     {
-        private const float SoftSlotGain = 0.35f;
+        private const float AheadSlotGain = 0.55f;
+        private const float BehindSlotGain = 0.85f;
+        private const float MinAheadM = 50f;
+        private const float MinBehindM = 40f;
         private const float MinAimDistM = 800f;
 
         private struct FollowerState
         {
             internal Missile Missile;
-            internal Vector3 LocalOffset;
+            /// <summary>Lateral/vertical offset in aim-frame at engage (Z unused).</summary>
+            internal Vector3 LateralLocal;
+            /// <summary>Along-track spacing from lead (always &gt; 0).</summary>
+            internal float AlongSpacing;
+            internal bool IsAhead;
             internal bool FinsDone;
             internal bool TangibleDone;
             internal bool ArmDone;
@@ -85,10 +92,18 @@ namespace MissileCameraRemoteControl.Control
             IReadOnlyList<Missile> pool = RemoteControlSession.Pool;
             Transform leadTf = lead.transform;
             Vector3 leadPos = leadTf.position;
-            Quaternion leadRot = leadTf.rotation;
+            Vector3 alongAxis = ResolveLeadAimDir();
+            if (alongAxis.sqrMagnitude < 1e-6f)
+                alongAxis = leadTf.forward;
+            alongAxis.Normalize();
+
+            Quaternion aimFrame = SafeLookRotation(alongAxis, leadTf.up);
 
             _lead = lead;
             _active = true;
+
+            int aheadN = 0;
+            int behindN = 0;
 
             for (int i = 0; i < pool.Count; i++)
             {
@@ -100,22 +115,37 @@ namespace MissileCameraRemoteControl.Control
                 if (!MissileAccess.IsRcControllable(m))
                     continue;
 
-                Vector3 local = Quaternion.Inverse(leadRot) * (m.transform.position - leadPos);
+                Vector3 delta = m.transform.position - leadPos;
+                float along = Vector3.Dot(delta, alongAxis);
+                bool ahead = along > 0f;
+                float spacing = Mathf.Abs(along);
+                if (ahead)
+                    spacing = Mathf.Max(spacing, MinAheadM);
+                else
+                    spacing = Mathf.Max(spacing, MinBehindM);
+
+                Vector3 local = Quaternion.Inverse(aimFrame) * delta;
+                Vector3 lateral = new Vector3(local.x, local.y, 0f);
+
                 _followers.Add(new FollowerState
                 {
                     Missile = m,
-                    LocalOffset = local,
+                    LateralLocal = lateral,
+                    AlongSpacing = spacing,
+                    IsAhead = ahead,
                     FinsDone = false,
                     TangibleDone = false,
                     ArmDone = false
                 });
+
+                if (ahead) aheadN++;
+                else behindN++;
             }
 
             RcPlugin.ModLogger?.LogInfo(
-                $"Formation follow ON — lead={lead.unitName ?? lead.name}, wingmen={_followers.Count}");
+                $"Formation follow ON — lead={lead.unitName ?? lead.name}, ahead={aheadN}, behind={behindN}");
         }
 
-        /// <summary>FixedUpdate bookkeeping — aim is written from Steering Prefix via ReinforceAimpoint.</summary>
         internal static void Tick()
         {
             if (!_active)
@@ -158,7 +188,7 @@ namespace MissileCameraRemoteControl.Control
             }
         }
 
-        /// <summary>After Seek, before Steering — parallel lead aim + soft slot.</summary>
+        /// <summary>After Seek: shared direction marker + ahead/behind slot hold.</summary>
         internal static void ReinforceAimpoint(Missile missile)
         {
             if (!IsFollower(missile) || _lead == null)
@@ -181,27 +211,69 @@ namespace MissileCameraRemoteControl.Control
             try
             {
                 Vector3 dir = ResolveLeadAimDir();
-                float dist = Mathf.Max(MinAimDistM, RcConfig.AimDistance.Value);
-                Vector3 origin = missile.transform.position;
-                Vector3 aim = RcBallisticImpactSafety.ResolveAimPoint(origin, dir, dist);
+                float aimDist = Mathf.Max(MinAimDistM, RcConfig.AimDistance.Value);
+                Vector3 leadPos = _lead.transform.position;
+                Vector3 me = missile.transform.position;
 
-                // Soft lateral/vertical hold toward formation slot (no along-track yank).
-                Vector3 slot = _lead.transform.TransformPoint(f.LocalOffset);
-                Vector3 toSlot = slot - origin;
-                Vector3 along = Vector3.Project(toSlot, dir);
-                Vector3 lateral = toSlot - along;
-                aim += lateral * SoftSlotGain;
+                // Same direction marker the lead flies toward (reticle command).
+                Vector3 leadMarker = RcBallisticImpactSafety.ResolveAimPoint(leadPos, dir, aimDist);
 
-                // Re-resolve if soft slot pushed aim underground along same dive.
-                Vector3 fromOrigin = aim - origin;
-                if (fromOrigin.sqrMagnitude > 1f)
-                    aim = RcBallisticImpactSafety.ResolveAimPoint(origin, fromOrigin.normalized, fromOrigin.magnitude);
+                Quaternion aimFrame = SafeLookRotation(dir, _lead.transform.up);
+                Vector3 lateral = aimFrame * f.LateralLocal;
+
+                Vector3 slot;
+                float slotGain;
+                if (f.IsAhead)
+                {
+                    // Stay in front of the lead along the marker axis.
+                    float spacing = Mathf.Max(f.AlongSpacing, MinAheadM);
+                    slot = leadPos + dir * spacing + lateral;
+                    slotGain = AheadSlotGain;
+                }
+                else
+                {
+                    // Stay directly behind the lead.
+                    float spacing = Mathf.Max(f.AlongSpacing, MinBehindM);
+                    slot = leadPos - dir * spacing + lateral;
+                    slotGain = BehindSlotGain;
+                }
+
+                // Marker for this wingman = lead marker shifted by formation offset
+                // (ahead aims further along the attack line; behind aims short of it).
+                Vector3 myMarker = leadMarker + (slot - leadPos);
+
+                // Hold slot while still flying into the marker.
+                Vector3 cmd = myMarker + (slot - me) * slotGain;
+                Vector3 cmdDelta = cmd - me;
+                if (cmdDelta.sqrMagnitude < 1f)
+                    cmdDelta = dir * aimDist;
+
+                Vector3 aim = RcBallisticImpactSafety.ResolveAimPoint(
+                    me, cmdDelta.normalized, Mathf.Max(cmdDelta.magnitude, MinAimDistM * 0.5f));
 
                 missile.SetAimpoint(aim.ToGlobalPosition(), ResolveLeadVel());
             }
             catch
             {
                 // ignore
+            }
+        }
+
+        private static Quaternion SafeLookRotation(Vector3 forward, Vector3 approxUp)
+        {
+            if (forward.sqrMagnitude < 1e-8f)
+                forward = Vector3.forward;
+            forward.Normalize();
+            Vector3 up = approxUp.sqrMagnitude > 1e-8f ? approxUp : Vector3.up;
+            if (Mathf.Abs(Vector3.Dot(forward, up.normalized)) > 0.98f)
+                up = Vector3.up;
+            try
+            {
+                return Quaternion.LookRotation(forward, up);
+            }
+            catch
+            {
+                return Quaternion.identity;
             }
         }
 

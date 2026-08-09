@@ -61,34 +61,60 @@ namespace MissileCameraRemoteControl.Control
             _lastMissile = missile;
 
             RcAimInputMode mode = RcConfig.AimInputMode.Value;
-            bool useMouse = mode == RcAimInputMode.Mouse || mode == RcAimInputMode.Both;
-            bool useKeys = mode == RcAimInputMode.Keys || mode == RcAimInputMode.Both;
-
-            if (useMouse)
+            if (mode == RcAimInputMode.Mouse)
             {
-                float mx = Input.GetAxisRaw("Mouse X");
-                float my = Input.GetAxisRaw("Mouse Y");
-                if (mx * mx + my * my >= MouseDeadzone * MouseDeadzone)
-                {
-                    float sens = Mathf.Max(0.02f, RcConfig.MouseSensitivity.Value) * MouseDegPerUnit;
-                    _pendingYawDeg += mx * sens;
-                    _pendingPitchDeg += -my * sens;
-                }
+                PollMouse();
             }
-
-            if (useKeys)
+            else
             {
                 float rate = KeyAimDegPerSec
                     * Mathf.Max(0.05f, RcConfig.KeyAimSensitivity.Value)
                     * Time.unscaledDeltaTime;
-                if (KeybindPoll.IsHeld(RcConfig.AimYawLeft.Value))
-                    _pendingYawDeg -= rate;
-                if (KeybindPoll.IsHeld(RcConfig.AimYawRight.Value))
-                    _pendingYawDeg += rate;
-                if (KeybindPoll.IsHeld(RcConfig.AimPitchUp.Value))
-                    _pendingPitchDeg -= rate;
-                if (KeybindPoll.IsHeld(RcConfig.AimPitchDown.Value))
-                    _pendingPitchDeg += rate;
+                PollKeyScheme(mode, rate);
+            }
+        }
+
+        private static void PollMouse()
+        {
+            float mx = Input.GetAxisRaw("Mouse X");
+            float my = Input.GetAxisRaw("Mouse Y");
+            if (mx * mx + my * my < MouseDeadzone * MouseDeadzone)
+                return;
+            float sens = Mathf.Max(0.02f, RcConfig.MouseSensitivity.Value) * MouseDegPerUnit;
+            _pendingYawDeg += mx * sens;
+            _pendingPitchDeg += -my * sens;
+        }
+
+        private static void PollKeyScheme(RcAimInputMode mode, float rate)
+        {
+            switch (mode)
+            {
+                case RcAimInputMode.WASD:
+                    if (Input.GetKey(KeyCode.A)) _pendingYawDeg -= rate;
+                    if (Input.GetKey(KeyCode.D)) _pendingYawDeg += rate;
+                    if (Input.GetKey(KeyCode.W)) _pendingPitchDeg -= rate;
+                    if (Input.GetKey(KeyCode.S)) _pendingPitchDeg += rate;
+                    break;
+                case RcAimInputMode.Arrows:
+                    if (Input.GetKey(KeyCode.LeftArrow)) _pendingYawDeg -= rate;
+                    if (Input.GetKey(KeyCode.RightArrow)) _pendingYawDeg += rate;
+                    if (Input.GetKey(KeyCode.UpArrow)) _pendingPitchDeg -= rate;
+                    if (Input.GetKey(KeyCode.DownArrow)) _pendingPitchDeg += rate;
+                    break;
+                case RcAimInputMode.NumPadArrows:
+                    if (Input.GetKey(KeyCode.Keypad4)) _pendingYawDeg -= rate;
+                    if (Input.GetKey(KeyCode.Keypad6)) _pendingYawDeg += rate;
+                    if (Input.GetKey(KeyCode.Keypad8)) _pendingPitchDeg -= rate;
+                    // Keypad2 = down; Keypad5 also common as “down” on some layouts.
+                    if (Input.GetKey(KeyCode.Keypad2) || Input.GetKey(KeyCode.Keypad5))
+                        _pendingPitchDeg += rate;
+                    break;
+                case RcAimInputMode.Custom:
+                    if (KeybindPoll.IsHeld(RcConfig.AimYawLeft.Value)) _pendingYawDeg -= rate;
+                    if (KeybindPoll.IsHeld(RcConfig.AimYawRight.Value)) _pendingYawDeg += rate;
+                    if (KeybindPoll.IsHeld(RcConfig.AimPitchUp.Value)) _pendingPitchDeg -= rate;
+                    if (KeybindPoll.IsHeld(RcConfig.AimPitchDown.Value)) _pendingPitchDeg += rate;
+                    break;
             }
         }
 

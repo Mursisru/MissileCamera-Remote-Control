@@ -2,7 +2,6 @@ using System.Collections.Generic;
 using System.Reflection;
 using HarmonyLib;
 using MissileCameraRemoteControl.Access;
-using MissileCameraRemoteControl.Config;
 using UnityEngine;
 using UnityEngine.UI;
 
@@ -11,7 +10,6 @@ namespace MissileCameraRemoteControl.Control
     /// <summary>
     /// While RC: stock Select locks unit under FS reticle onto the controlled missile;
     /// Cancel clears missile lock; Cancel-hold clears all aircraft targets too.
-    /// RelockTarget bind (default ') repeats lock under reticle.
     /// </summary>
     internal static class RcRetargetController
     {
@@ -72,18 +70,12 @@ namespace MissileCameraRemoteControl.Control
 
                 if (InvokeTimedPressUp(input, "Cancel", 0f, clickDelay))
                     ClearMissileTarget(missile);
-
-                if (KeybindPoll.IsDown(RcConfig.RelockTarget.Value))
-                    RelockUnderReticle(missile);
             }
             catch
             {
                 // ignore
             }
         }
-
-        /// <summary>Public relock entry (bind ') — same pick as Select under FS reticle.</summary>
-        internal static void RelockUnderReticle(Missile missile) => TryLockUnderReticle(missile);
 
         private static object? TryGetPlayerInput()
         {

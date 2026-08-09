@@ -39,7 +39,7 @@ namespace MissileCameraRemoteControl.Cloning
 
             if (Contains(name, "AAM-36") || Contains(name, "AAM-46") || Contains(name, "Longstrong"))
             {
-                return "Extended-range air-to-air missile with data-link mid-course updates and optical/radar terminal engagement. Supports in-flight retarget and relock under remote control.";
+                return "Extended-range air-to-air missile with data-link mid-course updates and optical/radar terminal engagement. Supports in-flight retarget under remote control.";
             }
 
             if ((Contains(name, "76mm") && Contains(name, "Guided")) || Contains(name, "DLG Shell"))
