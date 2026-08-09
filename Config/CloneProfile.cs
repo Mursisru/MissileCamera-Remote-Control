@@ -70,13 +70,8 @@ namespace MissileCameraRemoteControl.Config
             return false;
         }
 
-        internal static bool IsPassiveShellDisplayName(string? name)
-        {
-            if (string.IsNullOrEmpty(name))
-                return false;
-            SplitWarheadSuffix(StripLegacyPrefix(name!), out string core, out _);
-            return string.Equals(core, Name76mmDlgShell, StringComparison.Ordinal);
-        }
+        /// <summary>Legacy helper — 76mm DLG is now player-controllable; always false.</summary>
+        internal static bool IsPassiveShellDisplayName(string? name) => false;
 
         /// <summary>Returns false for excluded / already-cloned mounts.</summary>
         internal static bool TryResolve(
@@ -110,7 +105,7 @@ namespace MissileCameraRemoteControl.Config
             {
                 guidance = RcGuidanceKind.DataLink;
                 engine = RcEngineKind.Jet;
-                controllable = false;
+                controllable = true;
                 return true;
             }
 

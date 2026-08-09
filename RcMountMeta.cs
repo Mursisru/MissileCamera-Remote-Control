@@ -10,7 +10,7 @@ namespace MissileCameraRemoteControl
         internal RcEngineKind Engine;
         internal string SourceMountKey = string.Empty;
         internal string BackupSeekerHint = string.Empty;
-        /// <summary>False for 76mm DLG Shell — loadout clone only, no RC tag control.</summary>
+        /// <summary>Player remote stick allowed (76mm DLG included).</summary>
         internal bool Controllable = true;
     }
 }

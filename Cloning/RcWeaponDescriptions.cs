@@ -44,7 +44,7 @@ namespace MissileCameraRemoteControl.Cloning
 
             if ((Contains(name, "76mm") && Contains(name, "Guided")) || Contains(name, "DLG Shell"))
             {
-                return "Data-link guided 76mm shell. Unpowered ballistic projectile that steers toward a designated aimpoint; no remote-pilot stick and no onboard fuel motor.";
+                return "Data-link guided 76mm shell. Unpowered ballistic projectile under remote aim control — steers toward the designated aimpoint with no onboard fuel motor.";
             }
 
             if (Contains(name, "AShM-300"))

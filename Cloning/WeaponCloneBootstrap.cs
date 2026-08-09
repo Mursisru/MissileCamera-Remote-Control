@@ -27,6 +27,7 @@ namespace MissileCameraRemoteControl.Cloning
             _failStreak = 0;
             CloneRegistry.Clear();
             MissileDefinitionCloner.Clear();
+            RcSharedWeaponInfo.Clear();
         }
 
         internal static bool TryRun(ManualLogSource? log)
@@ -129,19 +130,17 @@ namespace MissileCameraRemoteControl.Cloning
                 return existing;
             }
 
-            WeaponInfo infoClone = UnityEngine.Object.Instantiate(original.info);
-            infoClone.name = original.info.name + (guidance == RcGuidanceKind.Satcom ? "_RC_SAT" : "_RC_DL");
             string displayName = CloneProfile.MakeDisplayName(
                 original.info.weaponName,
                 guidance,
                 original.jsonKey,
                 original.info.shortName);
-            infoClone.weaponName = displayName;
-            infoClone.shortName = displayName;
-            infoClone.description = RcWeaponDescriptions.Resolve(original.info.weaponName, guidance);
+            string description = RcWeaponDescriptions.Resolve(original.info.weaponName, guidance);
+            string nameSuffix = guidance == RcGuidanceKind.Satcom ? "_RC_SAT" : "_RC_DL";
 
-            // CRITICAL: keep vanilla flying prefab — runtime Instantiates are NOT Mirage-registered and despawn on Spawn().
-            infoClone.weaponPrefab = original.info.weaponPrefab;
+            // Shared WeaponInfo by display name — WeaponManager stacks stations by reference ==.
+            WeaponInfo infoClone = RcSharedWeaponInfo.GetOrCreate(
+                original.info, displayName, description, nameSuffix);
 
             GameObject mountPrefab;
             try
@@ -151,7 +150,7 @@ namespace MissileCameraRemoteControl.Cloning
             catch (Exception ex)
             {
                 log?.LogWarning($"Skip {original.jsonKey}: mount prefab Instantiate failed ({ex.Message})");
-                UnityEngine.Object.Destroy(infoClone);
+                // Do not Destroy infoClone — may be shared across other RC mounts.
                 return null;
             }
 

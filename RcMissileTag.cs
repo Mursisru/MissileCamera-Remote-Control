@@ -10,7 +10,7 @@ namespace MissileCameraRemoteControl
         internal RcEngineKind Engine;
         internal string BackupSeekerType = string.Empty;
         internal string SourceMountKey = string.Empty;
-        /// <summary>False for passive shells (76mm DLG) — no player T/FS remote stick.</summary>
+        /// <summary>False only if stamped Controllable=false (legacy); 76mm DLG is controllable.</summary>
         internal bool Controllable = true;
         /// <summary>Cached DL/SATCOM string for GetSeekerType (avoid enum→string every UI poll).</summary>
         internal string GuidanceLabel = string.Empty;
