@@ -109,8 +109,8 @@ namespace MissileCameraRemoteControl.Config
                 return true;
             }
 
-            if (key.StartsWith("AGM1", StringComparison.Ordinal)
-                || Contains(name, "AGM-68"))
+            // AGM-68D ONLY from AGM-68 (AGM_heavy*). AGM1* = AGM-48 — never alias.
+            if (IsAgm68Source(key, name))
             {
                 guidance = RcGuidanceKind.DataLink;
                 engine = RcEngineKind.Jet;
@@ -241,12 +241,24 @@ namespace MissileCameraRemoteControl.Config
         {
             return jsonKey.StartsWith("AAM1", StringComparison.Ordinal)
                 || jsonKey.StartsWith("IRMS", StringComparison.Ordinal)
-                || jsonKey.StartsWith("AGM_heavy", StringComparison.Ordinal)
+                || jsonKey.StartsWith("AGM1", StringComparison.Ordinal) // AGM-48 — not AGM-68D
                 || jsonKey.StartsWith("ARM", StringComparison.Ordinal)
                 || jsonKey.StartsWith("Rocket", StringComparison.Ordinal)
                 || jsonKey.StartsWith("bomb", StringComparison.OrdinalIgnoreCase)
                 || jsonKey.StartsWith("nuclearBomb", StringComparison.Ordinal)
                 || jsonKey.IndexOf("Genie", StringComparison.OrdinalIgnoreCase) >= 0;
+        }
+
+        /// <summary>AGM-68 mounts only (AGM_heavy*). Never AGM1 / AGM-48.</summary>
+        private static bool IsAgm68Source(string key, string name)
+        {
+            if (Contains(name, "AGM-48"))
+                return false;
+            if (key.StartsWith("AGM1", StringComparison.Ordinal))
+                return false;
+            if (key.StartsWith("AGM_heavy", StringComparison.Ordinal))
+                return true;
+            return Contains(name, "AGM-68");
         }
 
         private static bool Is76mmGuided(string key, string name)
@@ -378,7 +390,8 @@ namespace MissileCameraRemoteControl.Config
             mappedCore = string.Empty;
             if (string.IsNullOrEmpty(jsonKey))
                 return false;
-            if (jsonKey!.StartsWith("AGM1", StringComparison.Ordinal))
+            // AGM-68 racks only — AGM1* is AGM-48.
+            if (jsonKey!.StartsWith("AGM_heavy", StringComparison.Ordinal))
             {
                 mappedCore = NameAgm68D;
                 return true;
@@ -434,6 +447,9 @@ namespace MissileCameraRemoteControl.Config
                 mappedCore = NameAgm98D;
                 return true;
             }
+
+            if (Contains(core, "AGM-48"))
+                return false;
 
             if (Contains(core, "AGM-68"))
             {
