@@ -243,12 +243,26 @@ namespace MissileCameraRemoteControl.Control
                 Vector3 along = Vector3.Project(toSlot, dir);
                 Vector3 lateral = toSlot - along;
 
-                Vector3 look = dir * aimDist + lateral * LateralGain;
+                Vector3 lat = lateral * LateralGain;
+                float maxLat = aimDist * 0.4f;
+                float latSq = lat.sqrMagnitude;
+                if (latSq > maxLat * maxLat && latSq > 1e-6f)
+                    lat *= maxLat / Mathf.Sqrt(latSq);
+
+                Vector3 look = dir * aimDist + lat;
                 if (look.sqrMagnitude < 1f)
                     look = dir * aimDist;
 
+                Vector3 nose = missile.transform.forward;
+                if (nose.sqrMagnitude > 1e-6f && Vector3.Dot(look, nose) < 0f)
+                    look = dir * aimDist;
+
+                Vector3 lookDir = look.normalized;
                 Vector3 aim = RcBallisticImpactSafety.ResolveAimPoint(
-                    me, look.normalized, Mathf.Max(look.magnitude, MinAimDistM * 0.5f));
+                    me, lookDir, Mathf.Max(look.magnitude, MinAimDistM * 0.5f));
+                Vector3 toAim = aim - me;
+                if (toAim.sqrMagnitude < 1f || Vector3.Dot(toAim, lookDir) < 0f)
+                    aim = me + lookDir * Mathf.Max(aimDist, MinAimDistM);
 
                 missile.SetAimpoint(aim.ToGlobalPosition(), ResolveLeadVel());
             }

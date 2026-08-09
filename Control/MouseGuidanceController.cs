@@ -7,6 +7,7 @@ namespace MissileCameraRemoteControl.Control
     /// <summary>
     /// World-space WT aim. Mouse queues deltas; LateProject updates reticle after SyncPose.
     /// ReinforceAimpoint runs on Steering prefix (after Seek) so ballistic/cruise Seek cannot steal stick.
+    /// Anti-flip: nose init, zenith heading hold, per-step aim cap, never write aim behind nose.
     /// </summary>
     internal static class MouseGuidanceController
     {
@@ -15,6 +16,8 @@ namespace MissileCameraRemoteControl.Control
         private const float KeyAimDegPerSec = 55f;
         private const float MaxPitchSin = 0.9998f;
         private const float ProjectDistance = 2000f;
+        /// <summary>Caps Alt-Tab / focus spikes that would spin aim ~180° in one Consume.</summary>
+        private const float MaxAimStepDeg = 70f;
 
         private static Vector3 _worldAimDir = Vector3.forward;
         private static bool _initialized;
@@ -183,33 +186,56 @@ namespace MissileCameraRemoteControl.Control
         {
             if (!_initialized)
             {
-                Vector3 fwd = view.forward;
+                // Prefer nose: feed can briefly face opposite and seed a 180° stick.
+                Vector3 fwd = mt.forward;
                 if (fwd.sqrMagnitude < 1e-6f)
-                    fwd = mt.forward;
+                    fwd = view.forward;
                 _worldAimDir = ClampPitch(fwd.normalized);
                 _initialized = true;
             }
 
-            float yaw = _pendingYawDeg;
-            float pitch = _pendingPitchDeg;
+            float yaw = Mathf.Clamp(_pendingYawDeg, -MaxAimStepDeg, MaxAimStepDeg);
+            float pitch = Mathf.Clamp(_pendingPitchDeg, -MaxAimStepDeg, MaxAimStepDeg);
             _pendingYawDeg = 0f;
             _pendingPitchDeg = 0f;
+
+            Vector3 prev = _worldAimDir;
             if (yaw * yaw + pitch * pitch > 1e-10f)
                 ApplyMouseToWorldAim(view, yaw, pitch);
 
             if (_worldAimDir.sqrMagnitude > 1e-8f)
                 _worldAimDir = _worldAimDir.normalized;
             else
-                _worldAimDir = view.forward.normalized;
+                _worldAimDir = mt.forward.sqrMagnitude > 1e-6f
+                    ? mt.forward.normalized
+                    : view.forward.normalized;
+
+            // Absolute flip guard (weird view axes / near-zenith math).
+            if (prev.sqrMagnitude > 1e-6f)
+            {
+                float stepRad = MaxAimStepDeg * Mathf.Deg2Rad;
+                if (Vector3.Angle(prev, _worldAimDir) > MaxAimStepDeg)
+                    _worldAimDir = Vector3.RotateTowards(prev.normalized, _worldAimDir, stepRad, 0f);
+            }
         }
 
         private static void WriteAimpoint(Missile missile, Transform mt)
         {
             float dist = Mathf.Max(200f, RcConfig.AimDistance.Value);
             Vector3 origin = mt.position;
-            Vector3 dir = _worldAimDir.sqrMagnitude > 1e-8f ? _worldAimDir.normalized : mt.forward;
+            Vector3 nose = mt.forward.sqrMagnitude > 1e-6f ? mt.forward.normalized : Vector3.forward;
+            Vector3 dir = _worldAimDir.sqrMagnitude > 1e-8f ? _worldAimDir.normalized : nose;
+
+            // Steering yanks hard if aimPoint is behind the nose — fold to forward hemisphere.
+            dir = EnsureForwardHemisphere(dir, nose);
+
             // Ray-resolve: looking down hits terrain along look — does not flatten dive.
             Vector3 aimLocal = RcBallisticImpactSafety.ResolveAimPoint(origin, dir, dist);
+            Vector3 toAim = aimLocal - origin;
+            if (toAim.sqrMagnitude < 1f
+                || Vector3.Dot(toAim, nose) < 0f
+                || Vector3.Dot(toAim, dir) < 0f)
+                aimLocal = origin + dir * dist;
 
             try
             {
@@ -220,6 +246,18 @@ namespace MissileCameraRemoteControl.Control
             {
                 // ignore
             }
+        }
+
+        /// <summary>Never command reverse of nose (stock Steering rotates 45°/tick into a flip).</summary>
+        private static Vector3 EnsureForwardHemisphere(Vector3 dir, Vector3 nose)
+        {
+            if (Vector3.Dot(dir, nose) >= 0.02f)
+                return dir;
+
+            Vector3 folded = Vector3.ProjectOnPlane(dir, nose);
+            if (folded.sqrMagnitude < 1e-6f)
+                return nose;
+            return (folded.normalized + nose * 0.05f).normalized;
         }
 
         private static void ApplyMouseToWorldAim(Transform view, float yawDeltaDeg, float pitchDeltaDeg)
@@ -245,7 +283,12 @@ namespace MissileCameraRemoteControl.Control
             {
                 Vector3 flat = new Vector3(dir.x, 0f, dir.z);
                 if (flat.sqrMagnitude < 1e-8f)
-                    flat = Vector3.forward;
+                {
+                    // World +Z snap = instant heading reverse near zenith/nadir.
+                    Vector3 prevFlat = new Vector3(_worldAimDir.x, 0f, _worldAimDir.z);
+                    flat = prevFlat.sqrMagnitude > 1e-8f ? prevFlat : Vector3.forward;
+                }
+
                 flat.Normalize();
                 float y = Mathf.Sign(dir.y) * MaxPitchSin;
                 float horiz = Mathf.Sqrt(Mathf.Max(0f, 1f - y * y));
