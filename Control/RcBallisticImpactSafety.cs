@@ -7,16 +7,19 @@ using UnityEngine;
 namespace MissileCameraRemoteControl.Control
 {
     /// <summary>
-    /// Ballistic / solid RC under player control: Seek is skipped so stock Fusing airburst
-    /// never runs, and aim along look*AimDistance can sit under terrain → CCD tunnel.
-    /// Clamp aim to surface; detonate if buried; run airburst check while Owned.
+    /// While player OwnsMissile: Seek (and its SD/airburst) is skipped / gated.
+    /// Long flights can drive aim under terrain → CCD tunnel, or soft-land with no blast.
+    /// Clamp aim; extra impact ray; burial + slow near-ground detonate; ballistic airburst.
     /// </summary>
     internal static class RcBallisticImpactSafety
     {
         private const float SurfaceClearanceM = 2f;
-        private const float BuriedDepthM = 8f;
-        private const float ExtraLookAheadSec = 0.12f;
-        private const float MinLookAheadM = 40f;
+        private const float BuriedDepthM = 5f;
+        private const float ExtraLookAheadSec = 0.18f;
+        private const float MinLookAheadM = 50f;
+        private const float SoftLandSpeed = 90f;
+        private const float SoftLandAltM = 25f;
+        private const float SoftLandMinAge = 8f;
 
         private static readonly FieldInfo? AirburstHeightField =
             typeof(BallisticMissileGuidance).GetField(
@@ -46,10 +49,10 @@ namespace MissileCameraRemoteControl.Control
             return _isBallistic;
         }
 
-        /// <summary>Keep aimpoint on / above terrain for ballistic RC stick.</summary>
+        /// <summary>Keep aimpoint on / above terrain for any owned RC stick (cruise + ballistic).</summary>
         internal static Vector3 ClampAimToSurface(Missile missile, Vector3 origin, Vector3 aimLocal, float maxDist)
         {
-            if (!IsBallisticRc(missile))
+            if (missile == null)
                 return aimLocal;
 
             Vector3 delta = aimLocal - origin;
@@ -62,7 +65,6 @@ namespace MissileCameraRemoteControl.Control
             if (Physics.Raycast(origin, dir, out RaycastHit hit, cast, TerrainMask, QueryTriggerInteraction.Ignore))
                 return hit.point + hit.normal * SurfaceClearanceM;
 
-            // Aim below sea: lift to surface.
             try
             {
                 float sea = Datum.LocalSeaY;
@@ -86,14 +88,16 @@ namespace MissileCameraRemoteControl.Control
                 return;
             if (!RemoteControlSession.OwnsMissile(missile))
                 return;
-            if (!IsBallisticRc(missile))
-                return;
+
+            EnsureCached(missile);
 
             try
             {
-                TryAirburst(missile);
+                if (_isBallistic)
+                    TryAirburst(missile);
                 TryExtraImpactRay(missile);
                 TryBuriedDetonate(missile);
+                TrySoftLandDetonate(missile);
             }
             catch
             {
@@ -164,7 +168,7 @@ namespace MissileCameraRemoteControl.Control
 
             Vector3 vel = missile.rb.velocity;
             float speed = vel.magnitude;
-            if (speed < 30f)
+            if (speed < 25f)
                 return;
 
             Vector3 pos = missile.transform.position;
@@ -178,7 +182,6 @@ namespace MissileCameraRemoteControl.Control
             if (!Physics.Linecast(pos, end, out RaycastHit hit, mask, QueryTriggerInteraction.Ignore))
                 return;
 
-            // Match vanilla: skip soft penetrate-only if we can; prefer hard statics/ships.
             ForceDetonate(missile, hit.normal, hitTerrain: true);
         }
 
@@ -207,6 +210,48 @@ namespace MissileCameraRemoteControl.Control
                 return;
 
             ForceDetonate(missile, hit.normal, hitTerrain: true);
+        }
+
+        /// <summary>Slow near-ground under RC — vanilla Seek SD is gated, so soft-land would fizzle.</summary>
+        private static void TrySoftLandDetonate(Missile missile)
+        {
+            if (missile.timeSinceSpawn < SoftLandMinAge)
+                return;
+            if (missile.rb == null)
+                return;
+
+            float speed = missile.rb.velocity.magnitude;
+            if (speed > SoftLandSpeed)
+                return;
+
+            Vector3 pos = missile.transform.position;
+            float alt = SoftLandAltM + 1f;
+            try
+            {
+                alt = missile.radarAlt;
+            }
+            catch
+            {
+                if (Physics.Raycast(pos, Vector3.down, out RaycastHit hit, SoftLandAltM + 50f,
+                        PhysicsLayers.StaticsMask, QueryTriggerInteraction.Ignore))
+                    alt = hit.distance;
+            }
+
+            try
+            {
+                float seaClear = pos.y - Datum.LocalSeaY;
+                if (seaClear < SoftLandAltM && seaClear < alt)
+                    alt = seaClear;
+            }
+            catch
+            {
+                // ignore
+            }
+
+            if (alt > SoftLandAltM)
+                return;
+
+            ForceDetonate(missile, Vector3.up, hitTerrain: true);
         }
 
         private static void ForceDetonate(Missile missile, Vector3 normal, bool hitTerrain)

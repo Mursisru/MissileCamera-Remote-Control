@@ -13,6 +13,7 @@ namespace MissileCameraRemoteControl.Control
     {
         private const float MouseDegPerUnit = 1.25f;
         private const float MouseDeadzone = 0.02f;
+        private const float KeyAimDegPerSec = 55f;
         private const float MaxPitchSin = 0.9998f;
         private const float ProjectDistance = 2000f;
 
@@ -51,7 +52,7 @@ namespace MissileCameraRemoteControl.Control
             FsAimReticle.SetVisible(false);
         }
 
-        /// <summary>Update: queue mouse; keep own world-projected marker visible.</summary>
+        /// <summary>Update: queue mouse/keys; LateProject writes aim after SyncPose.</summary>
         internal static void Tick(Missile missile)
         {
             if (missile == null || missile.disabled)
@@ -59,13 +60,35 @@ namespace MissileCameraRemoteControl.Control
 
             _lastMissile = missile;
 
-            float mx = Input.GetAxisRaw("Mouse X");
-            float my = Input.GetAxisRaw("Mouse Y");
-            if (mx * mx + my * my >= MouseDeadzone * MouseDeadzone)
+            RcAimInputMode mode = RcConfig.AimInputMode.Value;
+            bool useMouse = mode == RcAimInputMode.Mouse || mode == RcAimInputMode.Both;
+            bool useKeys = mode == RcAimInputMode.Keys || mode == RcAimInputMode.Both;
+
+            if (useMouse)
             {
-                float sens = Mathf.Max(0.02f, RcConfig.MouseSensitivity.Value) * MouseDegPerUnit;
-                _pendingYawDeg += mx * sens;
-                _pendingPitchDeg += -my * sens;
+                float mx = Input.GetAxisRaw("Mouse X");
+                float my = Input.GetAxisRaw("Mouse Y");
+                if (mx * mx + my * my >= MouseDeadzone * MouseDeadzone)
+                {
+                    float sens = Mathf.Max(0.02f, RcConfig.MouseSensitivity.Value) * MouseDegPerUnit;
+                    _pendingYawDeg += mx * sens;
+                    _pendingPitchDeg += -my * sens;
+                }
+            }
+
+            if (useKeys)
+            {
+                float rate = KeyAimDegPerSec
+                    * Mathf.Max(0.05f, RcConfig.KeyAimSensitivity.Value)
+                    * Time.unscaledDeltaTime;
+                if (KeybindPoll.IsHeld(RcConfig.AimYawLeft.Value))
+                    _pendingYawDeg -= rate;
+                if (KeybindPoll.IsHeld(RcConfig.AimYawRight.Value))
+                    _pendingYawDeg += rate;
+                if (KeybindPoll.IsHeld(RcConfig.AimPitchUp.Value))
+                    _pendingPitchDeg -= rate;
+                if (KeybindPoll.IsHeld(RcConfig.AimPitchDown.Value))
+                    _pendingPitchDeg += rate;
             }
         }
 
@@ -107,7 +130,7 @@ namespace MissileCameraRemoteControl.Control
 
             // Aimpoint along world aim from feed camera — projects cleanly on FLIR.
             Vector3 aimLocal = view.position + _worldAimDir * dist;
-            // Ballistic/TBM: do not command a point under terrain (CCD tunnel under map).
+            // Do not command under terrain (long-range / dive CCD tunnel).
             aimLocal = RcBallisticImpactSafety.ClampAimToSurface(missile, view.position, aimLocal, dist);
             try
             {

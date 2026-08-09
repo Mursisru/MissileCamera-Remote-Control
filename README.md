@@ -95,7 +95,10 @@ BepInEx 5 addon for **Nuclear Option**. Extends [MissileCamera](https://github.c
 | Afterburner (hold) | Left Shift |
 | Throttle up | Right Shift |
 | Throttle down | Right Ctrl |
-| Aim | Mouse |
+| Aim (mouse) | Mouse |
+| Aim yaw / pitch (keys) | Arrow keys |
+
+`AimInputMode` in config: `Mouse` / `Keys` / `Both` (default **Both**). Rebind aim keys to WASD, numpad, or any custom `KeyboardShortcut` in `com.at747.missilecamera.remotecontrol.cfg`.
 
 All binds are configurable in the BepInEx config file.
 
