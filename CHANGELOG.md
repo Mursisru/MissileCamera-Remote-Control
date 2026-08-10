@@ -8,6 +8,8 @@ Pre-release on `dev` since **1.0.0**.
 
 ### Added
 
+- GitHub update check (`Updates.CheckForUpdates`): compare `AppVersion` to latest full release; one EN prompt per session with “Don't show again”; silent when offline. Delayed vs Missile Camera prompt; notes if MC is also outdated.
+- Soft MC dependency gate: if Missile Camera is missing, offer install URL; decline keeps RC off until MC is present.
 - Formation follow (`P`): allied RC missiles hold ahead/behind slots parallel to the lead aim ray; optional `Control.AutoFormationFollow`.
 - Aim input modes: Mouse / WASD / Arrows / NumPadArrows / Custom (`CustomAim` binds).
 - Whitelist expansions: **AGM-68D** (AGM-68 / `AGM_heavy*` only), **AAM-46 Longstrong** (AAM-36 only), **76mm DLG Shell** (player-controllable).

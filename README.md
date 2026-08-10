@@ -9,7 +9,7 @@
 BepInEx 5 addon for **Nuclear Option**. Extends [MissileCamera](https://github.com/Mursisru/MissileCamera) with remote-control (RC) munition clones, fullscreen mouse guidance, throttle / afterburner, formation follow, and datalink / SATCOM link rules.
 
 **Plugin GUID:** `com.at747.missilecamera.remotecontrol`  
-**Hard dependency:** `com.at747.missilecamera.bepinex` (MissileCamera)
+**Soft dependency:** `com.at747.missilecamera.bepinex` (MissileCamera). If missing, RC offers an install prompt and stays off until MC is present.
 
 > [!NOTE]
 > Current pre-release is **1.9.9** on [`dev`](https://github.com/Mursisru/MissileCamera-Remote-Control/tree/dev). Stable public baseline remains [1.0.0](https://github.com/Mursisru/MissileCamera-Remote-Control/releases/tag/1.0.0).
@@ -19,7 +19,7 @@ BepInEx 5 addon for **Nuclear Option**. Extends [MissileCamera](https://github.c
 ## Critical requirements
 
 > [!IMPORTANT]
-> **Install MissileCamera first.** This addon will not load without it. Both plugins go in `BepInEx/plugins/`.
+> **Install MissileCamera first.** Without it, Remote Control shows an install prompt and stays disabled until Missile Camera is present. Both plugins go in `BepInEx/plugins/`.
 
 > [!IMPORTANT]
 > **BepInEx 5 (x64)** is required. Use the same loader setup as MissileCamera.
@@ -124,6 +124,8 @@ Useful config toggles:
 | `General.AllowAnyMunition` | `false` | Remote-control any allied LocalSim munition |
 | `General.AiEquipRcClones` | `true` | AI loadouts swap stock → RC clones |
 | `Control.AutoFormationFollow` | `false` | Auto-engage formation on Take |
+| `Updates.CheckForUpdates` | `true` | Compare `AppVersion` to latest full GitHub release |
+| `Updates.DontShowAgain` | `false` | Suppress outdated-version prompt (set by in-game checkbox) |
 
 All binds and options are in the BepInEx config file.
 
@@ -155,6 +157,7 @@ See [CHANGELOG.md](CHANGELOG.md).
 ### 1.9.9 highlights (since 1.0.0)
 
 - Formation follow (`P`) + optional auto-engage; parallel ahead/behind slots
+- GitHub update check + soft MC missing install prompt
 - Extra whitelist: AGM-68D, AAM-46 Longstrong, 76mm DLG Shell (shared WeaponInfo stacking)
 - Remappable aim schemes (WASD / Arrows / NumPad / Custom)
 - Hot-path Seek skip-set / latches / aim dedupe

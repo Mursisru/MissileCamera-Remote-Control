@@ -4,6 +4,7 @@ using BepInEx.Logging;
 using HarmonyLib;
 using MissileCameraRemoteControl.Cloning;
 using MissileCameraRemoteControl.Config;
+using MissileCameraRemoteControl.Update;
 using MissileCameraRemoteControl.Vfx;
 using UnityEngine;
 using UnityEngine.SceneManagement;
@@ -31,6 +32,8 @@ namespace MissileCameraRemoteControl.Control
             _instance = go.AddComponent<RcHost>();
             _instance._log = logger;
             _instance.Bootstrap();
+            RcUpdatePrompt.EnsureOn(go);
+            RcUpdateChecker.StartIfNeeded();
         }
 
         private void Bootstrap()

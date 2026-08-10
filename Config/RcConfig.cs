@@ -5,6 +5,8 @@ namespace MissileCameraRemoteControl.Config
 {
     internal static class RcConfig
     {
+        internal static bool IsBound { get; private set; }
+
         internal static ConfigEntry<bool> Enabled { get; private set; } = null!;
         internal static ConfigEntry<bool> AiEquipRcClones { get; private set; } = null!;
         /// <summary>When false (default): only official RC clones. When true: any allied LocalSim munition.</summary>
@@ -30,6 +32,9 @@ namespace MissileCameraRemoteControl.Config
         internal static ConfigEntry<float> JamEcmThreshold { get; private set; } = null!;
         internal static ConfigEntry<float> ServerPresenceTimeout { get; private set; } = null!;
 
+        internal static ConfigEntry<bool> CheckForUpdates { get; private set; } = null!;
+        internal static ConfigEntry<bool> UpdatePromptDontShowAgain { get; private set; } = null!;
+
         internal static ConfigEntry<KeyboardShortcut> ToggleControl { get; private set; } = null!;
         internal static ConfigEntry<KeyboardShortcut> OpenMissileList { get; private set; } = null!;
         internal static ConfigEntry<KeyboardShortcut> ThrottleUp { get; private set; } = null!;
@@ -50,6 +55,11 @@ namespace MissileCameraRemoteControl.Config
                 "AI aircraft equip RC (DL/SATCOM) clones instead of vanilla whitelist mounts. Bots do not remote-pilot — Seek runs normally.");
             AllowAnyMunition = config.Bind("General", "AllowAnyMunition", false,
                 "If false (default): only official MissileCamera RC clones can be remote-controlled. If true: any allied LocalSim munition (including other mods).");
+
+            CheckForUpdates = config.Bind("Updates", "CheckForUpdates", true,
+                "Check GitHub for a newer full release (not pre-release) on launch. Offline = silent.");
+            UpdatePromptDontShowAgain = config.Bind("Updates", "DontShowAgain", false,
+                "If true, never show the outdated-version prompt (set by the in-game checkbox).");
 
             AamProximityDetonate = config.Bind("Control", "AamProximityDetonate", true,
                 "Under RC: auto-detonate AAM-46 (and other AAM when AllowAnyMunition) near locked target (horizontal + vertical miss gates).");
@@ -115,6 +125,8 @@ namespace MissileCameraRemoteControl.Config
                 "Custom mode: pitch aim up (hold).");
             AimPitchDown = config.Bind("CustomAim", "AimPitchDown", new KeyboardShortcut(KeyCode.S),
                 "Custom mode: pitch aim down (hold).");
+
+            IsBound = true;
 
             RcPlugin.ModLogger?.LogInfo(
                 $"RC binds: Take={ToggleControl.Value} List={OpenMissileList.Value} Form={FormationFollow.Value} AimMode={AimInputMode.Value} " +
