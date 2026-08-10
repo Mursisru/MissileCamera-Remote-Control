@@ -52,6 +52,7 @@ namespace MissileCameraRemoteControl.Control
                 PatchMotorThrust(_harmony);
                 HarmonyPatches.RcMissileCameraThrSnap.TryPatch(_harmony, _log);
                 HarmonyPatches.RcSteeringUprightPatch.TryPatch(_harmony, _log);
+                HarmonyPatches.RcGLimitEnforce.TryPatch(_harmony, _log);
                 HarmonyPatches.RcFeedPoseReticlePatch.TryPatch(_harmony, _log);
                 _log?.LogInfo("Harmony patched.");
             }

@@ -175,7 +175,6 @@ namespace MissileCameraRemoteControl.Control
             _markerRt.pivot = new Vector2(0.5f, 0.5f);
             _markerRt.sizeDelta = new Vector2(BracketOuterPx, BracketOuterPx);
 
-            // Four corners: TL, TR, BL, BR — L-brackets with gap toward center.
             float half = BracketOuterPx * 0.5f;
             float inset = GapInsetPx;
             AddCornerArm(markerGo.transform, "TL_H", new Vector2(-half + inset, half - inset), new Vector2(BracketArmPx, BracketThicknessPx), new Vector2(0f, 1f));

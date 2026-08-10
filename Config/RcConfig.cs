@@ -16,6 +16,7 @@ namespace MissileCameraRemoteControl.Config
         internal static ConfigEntry<float> MouseSensitivity { get; private set; } = null!;
         internal static ConfigEntry<float> KeyAimSensitivity { get; private set; } = null!;
         internal static ConfigEntry<float> AimDistance { get; private set; } = null!;
+        internal static ConfigEntry<float> AimLagSeconds { get; private set; } = null!;
         internal static ConfigEntry<RcAimInputMode> AimInputMode { get; private set; } = null!;
         internal static ConfigEntry<float> JetBoostThrottle { get; private set; } = null!;
         internal static ConfigEntry<float> JetBoostBurnMult { get; private set; } = null!;
@@ -66,6 +67,8 @@ namespace MissileCameraRemoteControl.Config
                 "Keyboard/numpad aim rate multiplier (degrees/sec scale).");
             AimDistance = config.Bind("Control", "AimDistance", 4000f,
                 "World aim / command point distance (meters).");
+            AimLagSeconds = config.Bind("Control", "AimLagSeconds", 0.3f,
+                "Extra ease on nose turn rate (0 = stock gLimit only). Nose always reaches the direction marker.");
 
             JetBoostThrottle = config.Bind("Throttle", "JetBoostThrottle", 1.5f, "Jet afterburner throttle multiplier (>1).");
             JetBoostBurnMult = config.Bind("Throttle", "JetBoostBurnMult", 2.5f, "Jet fuel burn multiplier during boost.");

@@ -46,6 +46,12 @@ namespace MissileCameraRemoteControl.Access
         private static readonly FieldInfo? ProxyFuseField =
             typeof(Missile).GetField("proxyFuse", BindingFlags.Instance | BindingFlags.NonPublic);
 
+        private static readonly FieldInfo? GLimitField =
+            typeof(Missile).GetField("gLimit", BindingFlags.Instance | BindingFlags.NonPublic | BindingFlags.Public);
+
+        private static readonly FieldInfo? MaxTurnRateField =
+            typeof(Missile).GetField("maxTurnRate", BindingFlags.Instance | BindingFlags.NonPublic | BindingFlags.Public);
+
         private static readonly MethodInfo? ThrustMethod =
             MotorType?.GetMethod("Thrust", BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic);
 
@@ -129,6 +135,72 @@ namespace MissileCameraRemoteControl.Access
             catch
             {
                 return null;
+            }
+        }
+
+        /// <summary>Stock ω_max = min(maxTurnRate, g·gLimit/V) in rad/s.</summary>
+        internal static float GetMaxTurnRateRad(Missile? missile)
+        {
+            if (missile == null)
+                return 9.81f * 12f;
+
+            float gLim = 12f;
+            float maxTurnDeg = 0f;
+            try
+            {
+                if (GLimitField != null)
+                {
+                    float g = (float)GLimitField.GetValue(missile)!;
+                    if (g > 0.1f)
+                        gLim = g;
+                }
+            }
+            catch
+            {
+                // default
+            }
+
+            try
+            {
+                if (MaxTurnRateField != null)
+                    maxTurnDeg = (float)MaxTurnRateField.GetValue(missile)!;
+            }
+            catch
+            {
+                // ignore
+            }
+
+            float speed = 1f;
+            try
+            {
+                if (missile.rb != null)
+                    speed = Mathf.Max(missile.rb.velocity.magnitude, 1f);
+                else
+                    speed = Mathf.Max(missile.speed, 1f);
+            }
+            catch
+            {
+                speed = 1f;
+            }
+
+            float fromG = 9.81f * gLim / speed;
+            if (maxTurnDeg > 0.1f)
+                return Mathf.Min(maxTurnDeg * Mathf.Deg2Rad, fromG);
+            return fromG;
+        }
+
+        internal static float GetGLimit(Missile? missile)
+        {
+            if (missile == null || GLimitField == null)
+                return 12f;
+            try
+            {
+                float g = (float)GLimitField.GetValue(missile)!;
+                return g > 0.1f ? g : 12f;
+            }
+            catch
+            {
+                return 12f;
             }
         }
 
