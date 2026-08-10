@@ -22,9 +22,18 @@ namespace MissileCameraRemoteControl.Control
         private const float TerminalFullM = 450f;
         private const float CatchUpExtraLagM = 350f;
         private const float MaxTrailLeaveM = 1100f;
-        private const float FollowerOmegaScale = 0.42f;
+        private const float FollowerOmegaScale = 0.5f;
         private const float LeadDirSmoothTau = 0.25f;
         private const float MaxRouteBiasDeg = 8f;
+
+        /// <summary>Inside this, no lateral trail pull (stability).</summary>
+        private const float TrailDeadzoneM = 18f;
+
+        /// <summary>Max heading bias toward the trail (closes ~50–100 m without weave).</summary>
+        private const float MaxTrailCorrDeg = 14f;
+
+        /// <summary>Extra degrees per meter outside deadzone.</summary>
+        private const float TrailCorrDegPerM = 0.16f;
 
         /// <summary>Within this range of last lead impact → hold that point; farther → own seeker.</summary>
         private const float TerminalHandoffM = 2800f;
@@ -396,16 +405,32 @@ namespace MissileCameraRemoteControl.Control
             // 1) Base = fly like the lead (stable parallel course).
             Vector3 dir = leadDir;
 
-            // 2) Soft route hint from trail tangent (far look — not chase nearby rabbit).
-            if (!f.WasAheadAtEngage
-                && _trail.TryGetBehind(f.TrailBackM, out _, out Vector3 tan)
-                && tan.sqrMagnitude > 1e-6f)
+            // 2) Pull toward nearest trail point (lateral) — closes 50–100 m offset; deadzone stops weave.
+            if (_trail.TryGetNearest(me, out Vector3 nearest, out Vector3 tan))
             {
-                float ang = Vector3.Angle(dir, tan);
-                if (ang > 0.5f)
+                Vector3 toTrail = nearest - me;
+                // Prefer correction perpendicular to lead heading (less energy fight).
+                Vector3 lateral = toTrail - leadDir * Vector3.Dot(toTrail, leadDir);
+                float lat = lateral.magnitude;
+
+                if (lat > TrailDeadzoneM && lateral.sqrMagnitude > 1e-6f)
                 {
-                    float bias = Mathf.Min(ang, MaxRouteBiasDeg) * Mathf.Deg2Rad;
-                    dir = Vector3.RotateTowards(dir, tan.normalized, bias, 0f);
+                    float corrDeg = Mathf.Min(
+                        MaxTrailCorrDeg,
+                        (lat - TrailDeadzoneM) * TrailCorrDegPerM);
+                    if (corrDeg > 0.2f)
+                        dir = Vector3.RotateTowards(dir, lateral.normalized, corrDeg * Mathf.Deg2Rad, 0f);
+                }
+
+                // Light tangent align (route shape), only if not fighting a big lateral pull.
+                if (lat < 80f && tan.sqrMagnitude > 1e-6f && !f.WasAheadAtEngage)
+                {
+                    float ang = Vector3.Angle(dir, tan);
+                    if (ang > 0.5f)
+                    {
+                        float bias = Mathf.Min(ang, MaxRouteBiasDeg) * Mathf.Deg2Rad;
+                        dir = Vector3.RotateTowards(dir, tan.normalized, bias, 0f);
+                    }
                 }
             }
 

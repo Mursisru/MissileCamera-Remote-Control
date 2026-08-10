@@ -97,23 +97,62 @@ namespace MissileCameraRemoteControl.Control
         /// <summary>Nearest point on the polyline to <paramref name="world"/> (for solo / distance checks).</summary>
         internal float NearestDistance(Vector3 world)
         {
-            if (_count < 1)
+            if (!TryGetNearest(world, out Vector3 nearest, out _))
                 return float.MaxValue;
+            return Vector3.Distance(world, nearest);
+        }
+
+        /// <summary>Closest point on the recorded path + local tangent toward lead.</summary>
+        internal bool TryGetNearest(Vector3 world, out Vector3 nearest, out Vector3 tangentTowardLead)
+        {
+            nearest = default;
+            tangentTowardLead = Vector3.forward;
+            if (_count < 1)
+                return false;
             if (_count == 1)
-                return Vector3.Distance(world, GetNewest());
+            {
+                nearest = GetNewest();
+                return true;
+            }
 
             float best = float.MaxValue;
+            Vector3 bestPt = GetNewest();
+            Vector3 bestTan = Vector3.forward;
             Vector3 a = GetFromNewest(0);
             for (int i = 1; i < _count; i++)
             {
                 Vector3 b = GetFromNewest(i);
-                float d = DistPointToSegment(world, a, b);
+                // a = newer, b = older; tangent toward lead = a - b direction from older to newer
+                Vector3 ab = a - b; // wait: DistPointToSegment(world, a, b) - segment from newer to older
+                // Closest on segment a(newer)--b(older)
+                Vector3 ba = b - a;
+                float ba2 = ba.sqrMagnitude;
+                Vector3 pt;
+                if (ba2 < 1e-8f)
+                {
+                    pt = a;
+                }
+                else
+                {
+                    float t = Mathf.Clamp01(Vector3.Dot(world - a, ba) / ba2);
+                    pt = a + ba * t;
+                }
+
+                float d = Vector3.Distance(world, pt);
                 if (d < best)
+                {
                     best = d;
+                    bestPt = pt;
+                    Vector3 seg = a - b; // older → newer
+                    bestTan = seg.sqrMagnitude > 1e-6f ? seg.normalized : bestTan;
+                }
+
                 a = b;
             }
 
-            return best;
+            nearest = bestPt;
+            tangentTowardLead = bestTan;
+            return true;
         }
 
         private Vector3 GetNewest() => GetFromNewest(0);
