@@ -1,3 +1,4 @@
+using MissileCameraRemoteControl.Access;
 using MissileCameraRemoteControl.Config;
 using UnityEngine;
 
@@ -29,6 +30,7 @@ namespace MissileCameraRemoteControl.Control
             _nextEval = 0f;
             _lastMissileId = 0;
             _satcomCached = false;
+            _jamParity = 0;
         }
 
         internal static RcLinkLevel Evaluate(Missile missile)
@@ -47,6 +49,8 @@ namespace MissileCameraRemoteControl.Control
                 _nextEval = 0f;
                 RcMissileTag? tag = missile.GetComponent<RcMissileTag>();
                 _satcomCached = tag != null && tag.Guidance == RcGuidanceKind.Satcom;
+                // AllowAny third-party munitions have no RC tag — treat as Full while ownship-in-mesh path below;
+                // also skip SATCOM false-negatives that stuck Degraded/Lost with no mesh identity.
             }
 
             if (Time.unscaledTime < _nextEval)
@@ -60,6 +64,18 @@ namespace MissileCameraRemoteControl.Control
                 return _level;
             }
 
+            // AllowAny: no official DL/SATCOM mesh identity — do not soft-brick stick on Lost.
+            if (RcConfig.AllowAnyMunition.Value
+                && missile.GetComponent<RcMissileTag>() == null
+                && !MissileAccess.IsRcMissile(missile))
+            {
+                _jamSeconds = 0f;
+                _level = TryOwnshipInMesh(missile, Mathf.Max(1000f, RcConfig.MeshRangeM.Value))
+                    ? RcLinkLevel.Full
+                    : RcLinkLevel.Degraded;
+                return _level;
+            }
+
             float meshRange = Mathf.Max(1000f, RcConfig.MeshRangeM.Value);
             float jamRange = Mathf.Max(500f, RcConfig.JamRangeM.Value);
             float ecmThreshold = Mathf.Max(0.01f, RcConfig.JamEcmThreshold.Value);
@@ -68,10 +84,14 @@ namespace MissileCameraRemoteControl.Control
             // Local aircraft is the datalink source — Full while in mesh (no optical LoS needed).
             if (TryOwnshipInMesh(missile, meshRange))
             {
-                if (IsInEnemyJam(missile, jamRange, ecmThreshold))
-                    _jamSeconds += EvalInterval;
-                else
-                    _jamSeconds = 0f;
+                // Jam scan half-rate while ownship-in-mesh (already Full path).
+                if (ShouldScanJam())
+                {
+                    if (IsInEnemyJam(missile, jamRange, ecmThreshold))
+                        _jamSeconds += EvalInterval * 2f;
+                    else
+                        _jamSeconds = 0f;
+                }
 
                 _level = _jamSeconds >= jamBreak ? RcLinkLevel.Lost : RcLinkLevel.Full;
                 return _level;
@@ -95,6 +115,14 @@ namespace MissileCameraRemoteControl.Control
                 _level = RcLinkLevel.Degraded;
 
             return _level;
+        }
+
+        private static int _jamParity;
+
+        private static bool ShouldScanJam()
+        {
+            _jamParity++;
+            return (_jamParity & 1) == 0;
         }
 
         private static bool TryOwnshipInMesh(Missile missile, float meshRange)

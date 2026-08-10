@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 using BepInEx.Configuration;
 using UnityEngine;
 
@@ -28,13 +29,39 @@ namespace MissileCameraRemoteControl.Config
 
         private static bool ModifiersHeld(KeyboardShortcut shortcut)
         {
-            foreach (KeyCode mod in shortcut.Modifiers)
+            IEnumerable<KeyCode> mods = shortcut.Modifiers;
+            if (mods is KeyCode[] arr)
+            {
+                for (int i = 0; i < arr.Length; i++)
+                {
+                    KeyCode mod = arr[i];
+                    if (mod != KeyCode.None && !Input.GetKey(mod))
+                        return false;
+                }
+
+                return true;
+            }
+
+            if (mods is IList<KeyCode> list)
+            {
+                for (int i = 0; i < list.Count; i++)
+                {
+                    KeyCode mod = list[i];
+                    if (mod != KeyCode.None && !Input.GetKey(mod))
+                        return false;
+                }
+
+                return true;
+            }
+
+            foreach (KeyCode mod in mods)
             {
                 if (mod == KeyCode.None)
                     continue;
                 if (!Input.GetKey(mod))
                     return false;
             }
+
             return true;
         }
     }

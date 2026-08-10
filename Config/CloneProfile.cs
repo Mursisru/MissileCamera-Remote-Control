@@ -30,6 +30,9 @@ namespace MissileCameraRemoteControl.Config
         internal const string NameTuskoD = "Tusko-D";
         internal const string NameAlnd4S = "ALND-4S";
         internal const string NamePiledriverTbmS = "Piledriver TBM-S";
+        internal const string NameAgm68D = "AGM-68D";
+        internal const string NameAam46Longstrong = "AAM-46 Longstrong";
+        internal const string Name76mmDlgShell = "76mm DLG Shell";
 
         private static readonly string[] RcDisplayNames =
         {
@@ -38,7 +41,10 @@ namespace MissileCameraRemoteControl.Config
             NameAlmD500,
             NameTuskoD,
             NameAlnd4S,
-            NamePiledriverTbmS
+            NamePiledriverTbmS,
+            NameAgm68D,
+            NameAam46Longstrong,
+            Name76mmDlgShell
         };
 
         internal static bool IsRcCloneKey(string? jsonKey)
@@ -64,20 +70,74 @@ namespace MissileCameraRemoteControl.Config
             return false;
         }
 
+        /// <summary>
+        /// Official RC identity for player stick / Seek gates — not bare [DL]/[SATCOM] prefixes
+        /// (third-party mods must not become controllable by naming alone).
+        /// </summary>
+        internal static bool IsOfficialRcIdentity(string? weaponName, string? sourceMountKey)
+        {
+            if (IsRcCloneKey(sourceMountKey))
+                return true;
+            return IsRcDisplayName(weaponName);
+        }
+
+        /// <summary>Legacy helper — 76mm DLG is now player-controllable; always false.</summary>
+        internal static bool IsPassiveShellDisplayName(string? name) => false;
+
         /// <summary>Returns false for excluded / already-cloned mounts.</summary>
-        internal static bool TryResolve(string jsonKey, string? weaponName, out RcGuidanceKind guidance, out RcEngineKind engine)
+        internal static bool TryResolve(
+            string jsonKey,
+            string? weaponName,
+            out RcGuidanceKind guidance,
+            out RcEngineKind engine)
+        {
+            return TryResolve(jsonKey, weaponName, out guidance, out engine, out _);
+        }
+
+        internal static bool TryResolve(
+            string jsonKey,
+            string? weaponName,
+            out RcGuidanceKind guidance,
+            out RcEngineKind engine,
+            out bool controllable)
         {
             guidance = RcGuidanceKind.DataLink;
             engine = RcEngineKind.Jet;
+            controllable = true;
 
             if (string.IsNullOrEmpty(jsonKey) || IsRcCloneKey(jsonKey))
                 return false;
 
-            if (IsExcluded(jsonKey))
-                return false;
-
             string key = jsonKey;
             string name = weaponName ?? string.Empty;
+
+            // Positive whitelist first (before broad excludes).
+            if (Is76mmGuided(key, name))
+            {
+                guidance = RcGuidanceKind.DataLink;
+                engine = RcEngineKind.Jet;
+                controllable = true;
+                return true;
+            }
+
+            // AGM-68D ONLY from AGM-68 (AGM_heavy*). AGM1* = AGM-48 — never alias.
+            if (IsAgm68Source(key, name))
+            {
+                guidance = RcGuidanceKind.DataLink;
+                engine = RcEngineKind.Jet;
+                return true;
+            }
+
+            // AAM-46 Longstrong ONLY from AAM-36 — never AAM-29 / blanket AAM2* (duplicate models).
+            if (IsAam36Source(name) && !Contains(name, "AAM-29"))
+            {
+                guidance = RcGuidanceKind.DataLink;
+                engine = RcEngineKind.Jet;
+                return true;
+            }
+
+            if (IsExcluded(key))
+                return false;
 
             if (key.IndexOf("20kt", StringComparison.OrdinalIgnoreCase) >= 0
                 || name.IndexOf("ALND", StringComparison.OrdinalIgnoreCase) >= 0)
@@ -190,16 +250,38 @@ namespace MissileCameraRemoteControl.Config
 
         private static bool IsExcluded(string jsonKey)
         {
-            return jsonKey.StartsWith("AAM", StringComparison.Ordinal)
+            return jsonKey.StartsWith("AAM1", StringComparison.Ordinal)
                 || jsonKey.StartsWith("IRMS", StringComparison.Ordinal)
-                || jsonKey.StartsWith("AGM1", StringComparison.Ordinal)
-                || jsonKey.StartsWith("AGM_heavy", StringComparison.Ordinal)
+                || jsonKey.StartsWith("AGM1", StringComparison.Ordinal) // AGM-48 — not AGM-68D
                 || jsonKey.StartsWith("ARM", StringComparison.Ordinal)
                 || jsonKey.StartsWith("Rocket", StringComparison.Ordinal)
                 || jsonKey.StartsWith("bomb", StringComparison.OrdinalIgnoreCase)
                 || jsonKey.StartsWith("nuclearBomb", StringComparison.Ordinal)
                 || jsonKey.IndexOf("Genie", StringComparison.OrdinalIgnoreCase) >= 0;
         }
+
+        /// <summary>AGM-68 mounts only (AGM_heavy*). Never AGM1 / AGM-48.</summary>
+        private static bool IsAgm68Source(string key, string name)
+        {
+            if (Contains(name, "AGM-48"))
+                return false;
+            if (key.StartsWith("AGM1", StringComparison.Ordinal))
+                return false;
+            if (key.StartsWith("AGM_heavy", StringComparison.Ordinal))
+                return true;
+            return Contains(name, "AGM-68");
+        }
+
+        private static bool Is76mmGuided(string key, string name)
+        {
+            if (key.StartsWith("76mm", StringComparison.OrdinalIgnoreCase))
+                return true;
+            return Contains(name, "76mm") && Contains(name, "Guided");
+        }
+
+        /// <summary>Strict AAM-36 family — do not use AAM2* key alone (AAM-29 must not become Longstrong).</summary>
+        private static bool IsAam36Source(string name) =>
+            Contains(name, "AAM-36");
 
         internal static string MakeCloneKey(string originalKey, RcGuidanceKind guidance)
         {
@@ -220,7 +302,9 @@ namespace MissileCameraRemoteControl.Config
             string secondary = StripLegacyPrefix(shortName ?? string.Empty);
 
             string mappedCore;
-            if (!TryRemapCore(primary, out mappedCore) && !TryRemapCore(secondary, out mappedCore))
+            if (!TryRemapCore(primary, out mappedCore)
+                && !TryRemapCore(secondary, out mappedCore)
+                && !TryRemapFromKey(jsonKey, out mappedCore))
             {
                 if (!string.IsNullOrEmpty(primary))
                 {
@@ -312,6 +396,28 @@ namespace MissileCameraRemoteControl.Config
             core = name.Substring(0, start).TrimEnd();
         }
 
+        private static bool TryRemapFromKey(string? jsonKey, out string mappedCore)
+        {
+            mappedCore = string.Empty;
+            if (string.IsNullOrEmpty(jsonKey))
+                return false;
+            // AGM-68 racks only — AGM1* is AGM-48.
+            if (jsonKey!.StartsWith("AGM_heavy", StringComparison.Ordinal))
+            {
+                mappedCore = NameAgm68D;
+                return true;
+            }
+
+            // Never remap bare AAM2* → Longstrong (would alias AAM-29 racks too).
+            if (jsonKey.StartsWith("76mm", StringComparison.OrdinalIgnoreCase))
+            {
+                mappedCore = Name76mmDlgShell;
+                return true;
+            }
+
+            return false;
+        }
+
         private static bool TryRemapCore(string name, out string mappedCore)
         {
             mappedCore = string.Empty;
@@ -350,6 +456,31 @@ namespace MissileCameraRemoteControl.Config
             if (Contains(core, "AGM-99") || Contains(core, "AGM-98"))
             {
                 mappedCore = NameAgm98D;
+                return true;
+            }
+
+            if (Contains(core, "AGM-48"))
+                return false;
+
+            if (Contains(core, "AGM-68"))
+            {
+                mappedCore = NameAgm68D;
+                return true;
+            }
+
+            if (Contains(core, "AAM-36") || string.Equals(core, NameAam46Longstrong, StringComparison.Ordinal))
+            {
+                mappedCore = NameAam46Longstrong;
+                return true;
+            }
+
+            // Explicitly never remap AAM-29 → Longstrong
+            if (Contains(core, "AAM-29"))
+                return false;
+
+            if ((Contains(core, "76mm") && Contains(core, "Guided")) || Contains(core, "DLG Shell"))
+            {
+                mappedCore = Name76mmDlgShell;
                 return true;
             }
 

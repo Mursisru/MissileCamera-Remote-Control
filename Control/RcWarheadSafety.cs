@@ -5,14 +5,14 @@ namespace MissileCameraRemoteControl.Control
     /// <summary>
     /// Skipping seeker.Seek() under RC also skips Arm / SetTangible / DeployFins.
     /// DeployFins / Arm / Tangible are one-shot — spam DeployFins every frame re-fires RpcUnfoldFins.
-    /// No SetProxyFuse under RC: vanilla ProxyFuse.ConditionsMet airbursts on CPA fly-by
-    /// (inside DetectCollisions → RcDetonateGate allows it). Impact fuse still works.
+    /// Tangible only when clear of owner (vanilla-style) — fixed 1.5s SetTangible caused launch-pad self-hits.
+    /// Proxy fuse cleared every tick; SetProxyFuse also blocked by Harmony for all RC clones.
     /// </summary>
     internal static class RcWarheadSafety
     {
         private const float FinDelay = 0.5f;
-        private const float TangibleDelay = 1.5f;
         private const float ArmDelay = 2f;
+        private const float OwnerClearM = 20f;
 
         private static int _missileId;
         private static bool _finsDone;
@@ -41,8 +41,7 @@ namespace MissileCameraRemoteControl.Control
                 _armDone = false;
             }
 
-            // Kill proximity every tick — retarget/seeker may re-arm it.
-            Access.MissileAccess.ClearProxyFuse(missile);
+            Access.MissileAccess.ClearProxyFuseOnce(missile);
 
             float age = 0f;
             try
@@ -67,13 +66,19 @@ namespace MissileCameraRemoteControl.Control
                 }
             }
 
-            if (!_tangibleDone && age > TangibleDelay)
+            if (!_tangibleDone)
             {
                 try
                 {
-                    if (!missile.IsTangible())
+                    if (missile.IsTangible())
+                    {
+                        _tangibleDone = true;
+                    }
+                    else if (IsClearOfOwner(missile))
+                    {
                         missile.SetTangible(true);
-                    _tangibleDone = true;
+                        _tangibleDone = true;
+                    }
                 }
                 catch
                 {
@@ -93,6 +98,25 @@ namespace MissileCameraRemoteControl.Control
                 {
                     // retry
                 }
+            }
+        }
+
+        private static bool IsClearOfOwner(Missile missile)
+        {
+            try
+            {
+                Unit? owner = missile.owner;
+                if (owner == null || owner.disabled)
+                    return missile.timeSinceSpawn > 3f;
+
+                return !FastMath.InRange(
+                    owner.GlobalPosition(),
+                    missile.GlobalPosition(),
+                    OwnerClearM);
+            }
+            catch
+            {
+                return missile.timeSinceSpawn > 3f;
             }
         }
     }

@@ -2,6 +2,66 @@
 
 All notable changes to **MissileCamera: Remote Control** are documented in this file.
 
+## [2.0.0] - 2026-08-10
+
+Major release consolidating everything since **1.0.0**.
+
+### Added
+
+- Formation follow (`P`) with optional `Control.AutoFormationFollow`; cruise heading-copy + terminal latch onto shared impact.
+- Aim input modes: Mouse / WASD / Arrows / NumPadArrows / Custom (`CustomAim` binds).
+- Whitelist expansions: **AGM-68D**, **AAM-46 Longstrong**, **76mm DLG Shell**; shared `WeaponInfo` stacking.
+- `General.AllowAnyMunition` (default **false**): official RC clones only unless enabled.
+- Manual detonate (FS+RC Space); AAM proximity burst gates; FOLLOW / AFTERBURNER HUD banners.
+- Soft Missile Camera dependency: missing MC → EN install prompt; RC stays off until MC is present.
+- GitHub update check vs latest full release; one EN prompt per session + Don't show again; silent when offline.
+- Hot-path Seek skip-set, proxy/suppress latches, living RC registry, aim write dedupe.
+
+### Fixed
+
+- Formation weave / trail-past-marker (heading copy + impact latch).
+- Aim converge to direction marker under gLimit; anti reverse-flip; dive ray-resolve.
+- Target-lost cruise loiter; ballistic/long-flight terrain sink; impact fuse / cook-off false detonations.
+- Afterburner / FOLLOW split; degraded DL no longer kills AB from optical LoS alone.
+- AGM-68D / AAM-46 clone source guards (no AGM-48 / AAM-29).
+
+### Changed
+
+- Soft `BepInDependency` on Missile Camera (was hard fail).
+- Official RC identity no longer treats bare `[DL]` / `[SATCOM]` name prefixes as controllable.
+
+## [1.9.9] - 2026-08-09
+
+Pre-release on `dev` since **1.0.0**.
+
+### Added
+
+- GitHub update check (`Updates.CheckForUpdates`): compare `AppVersion` to latest full release; one EN prompt per session with “Don't show again”; silent when offline. Shows as soon as the check finishes (no delay); notes if MC is also outdated.
+- Soft MC dependency gate: if Missile Camera is missing, offer install URL; decline keeps RC off until MC is present.
+- Formation follow (`P`): allied RC missiles hold ahead/behind slots parallel to the lead aim ray; optional `Control.AutoFormationFollow`.
+- Aim input modes: Mouse / WASD / Arrows / NumPadArrows / Custom (`CustomAim` binds).
+- Whitelist expansions: **AGM-68D** (AGM-68 / `AGM_heavy*` only), **AAM-46 Longstrong** (AAM-36 only), **76mm DLG Shell** (player-controllable).
+- Shared `WeaponInfo` so RC mounts stack correctly in loadouts.
+- `General.AllowAnyMunition` (default **false**): when off, only official RC clones are remote-controllable; when on, any allied LocalSim munition.
+- FOLLOW / AFTERBURNER status HUD while controlling.
+- Hot-path Seek skip-set, proxy/suppress latches, living RC registry, aim write dedupe.
+
+### Fixed
+
+- Target-lost cruise loiter (DetonateGate only while player owns the missile).
+- Ballistic / long-flight terrain tunneling and soft-land sink.
+- Dive flattened by height clamp → ray-resolve along look / sea plane.
+- Random sharp reverse turns (zenith snap, mouse spikes, aim behind nose, formation lateral).
+- Formation chasing a marker behind the nose (braking / weird turns).
+- FOLLOW forcing afterburner; AB gated on motor fuel.
+- Mid-flight blast cook-off false detonations; raised lethal cook-off thresholds.
+- AGM-68D never cloned from AGM-48 (`AGM1*`); AAM-46 never from AAM-29.
+
+### Changed
+
+- Official RC identity no longer treats bare `[DL]` / `[SATCOM]` name prefixes as controllable (blocks third-party naming hijacks).
+- Afterburner / FOLLOW UX split; degraded DL no longer kills AB solely from optical LoS.
+
 ## [1.0.0] - 2026-08-01
 
 First public release.

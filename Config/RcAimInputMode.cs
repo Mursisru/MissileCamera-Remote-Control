@@ -4,7 +4,10 @@ namespace MissileCameraRemoteControl.Config
     internal enum RcAimInputMode
     {
         Mouse = 0,
-        Keys = 1,
-        Both = 2
+        WASD = 1,
+        Arrows = 2,
+        NumPadArrows = 3,
+        /// <summary>Player-defined AimYaw/Pitch keybinds in config.</summary>
+        Custom = 4
     }
 }

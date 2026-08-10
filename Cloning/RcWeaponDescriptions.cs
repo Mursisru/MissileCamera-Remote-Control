@@ -32,6 +32,21 @@ namespace MissileCameraRemoteControl.Cloning
                     : "Subsonic anti-ship missile with a data-linked mid-course channel. Designed for sea-skimming approach and pop-up terminal attack; friendly units can update the intercept before the seeker commits.";
             }
 
+            if (Contains(name, "AGM-68"))
+            {
+                return "Air-to-ground guided missile with a two-way data-link for mid-course aimpoint updates. Optical terminal phase matches the AGM-68 baseline when the link is idle.";
+            }
+
+            if (Contains(name, "AAM-36") || Contains(name, "AAM-46") || Contains(name, "Longstrong"))
+            {
+                return "Extended-range air-to-air missile with data-link mid-course updates and optical/radar terminal engagement. Supports in-flight retarget under remote control.";
+            }
+
+            if ((Contains(name, "76mm") && Contains(name, "Guided")) || Contains(name, "DLG Shell"))
+            {
+                return "Data-link guided 76mm shell. Unpowered ballistic projectile under remote aim control — steers toward the designated aimpoint with no onboard fuel motor.";
+            }
+
             if (Contains(name, "AShM-300"))
             {
                 return sat

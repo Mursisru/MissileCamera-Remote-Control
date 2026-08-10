@@ -62,8 +62,7 @@ namespace MissileCameraRemoteControl.HarmonyPatches
             if (info == null || string.IsNullOrEmpty(info.weaponName))
                 return false;
 
-            return CloneProfile.IsRcDisplayName(info.weaponName)
-                || CloneProfile.TryGetGuidanceFromRcName(info.weaponName, out _);
+            return CloneProfile.IsRcDisplayName(info.weaponName);
         }
     }
 }

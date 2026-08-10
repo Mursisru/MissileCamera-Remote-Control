@@ -15,6 +15,7 @@ namespace MissileCameraRemoteControl.Control
         private static bool _open;
         private static int _index;
         private static readonly List<Missile> _items = new List<Missile>(16);
+        private static readonly List<RcLinkLevel> _linkCache = new List<RcLinkLevel>(16);
         private static readonly StringBuilder _sb = new StringBuilder(512);
 
         internal static bool IsOpen => _open;
@@ -35,6 +36,7 @@ namespace MissileCameraRemoteControl.Control
                 return;
             RemoteControlSession.RefreshPool();
             _items.Clear();
+            _linkCache.Clear();
             IReadOnlyList<Missile> pool = RemoteControlSession.Pool;
             for (int i = 0; i < pool.Count; i++)
             {
@@ -46,6 +48,19 @@ namespace MissileCameraRemoteControl.Control
             {
                 RcPlugin.ModLogger?.LogInfo("RC list: no allied clone missiles.");
                 return;
+            }
+
+            for (int i = 0; i < _items.Count; i++)
+            {
+                Missile m = _items[i];
+                if (m == null)
+                {
+                    _linkCache.Add(RcLinkLevel.Lost);
+                    continue;
+                }
+
+                RcMissileTag? tag = m.GetComponent<RcMissileTag>();
+                _linkCache.Add(PeekLink(m, tag));
             }
 
             _index = 0;
@@ -73,6 +88,7 @@ namespace MissileCameraRemoteControl.Control
                 _body = null;
             }
             _items.Clear();
+            _linkCache.Clear();
         }
 
         internal static void Tick()
@@ -145,7 +161,7 @@ namespace MissileCameraRemoteControl.Control
                     guide = GuidanceLabels.For(tag.Guidance);
 
                 float distKm = (m.transform.position - origin).magnitude * 0.001f;
-                RcLinkLevel peek = PeekLink(m, tag);
+                RcLinkLevel peek = i < _linkCache.Count ? _linkCache[i] : RcLinkLevel.Full;
                 string link = peek == RcLinkLevel.Full ? "OK"
                     : peek == RcLinkLevel.Degraded ? "WEAK"
                     : "LOST";

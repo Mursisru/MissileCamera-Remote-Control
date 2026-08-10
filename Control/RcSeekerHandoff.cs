@@ -58,6 +58,66 @@ namespace MissileCameraRemoteControl.Control
             ApplyInternal(missile, writeAimpoint: true, log: true);
         }
 
+        /// <summary>
+        /// Formation terminal handoff: keep flying to lead's last impact point (route already shaped).
+        /// Optional unit lock kept for Seek context; knownPos/aim forced to the impact.
+        /// </summary>
+        internal static void CommitToImpactPoint(Missile missile, Vector3 localImpact, Unit? optionalTarget)
+        {
+            if (missile == null || missile.disabled)
+                return;
+            if (localImpact.sqrMagnitude < 1f)
+            {
+                CommitForAutonomous(missile);
+                return;
+            }
+
+            try
+            {
+                if (optionalTarget != null && !optionalTarget.disabled)
+                {
+                    try { missile.SetTarget(optionalTarget); }
+                    catch { /* ignore */ }
+                    try
+                    {
+                        MissileSeeker? s = MissileAccess.GetSeeker(missile) ?? missile.GetComponent<MissileSeeker>();
+                        if (s != null)
+                            SeekerTargetField?.SetValue(s, optionalTarget);
+                    }
+                    catch { /* ignore */ }
+                }
+
+                GlobalPosition known = localImpact.ToGlobalPosition();
+                MissileSeeker? seeker = MissileAccess.GetSeeker(missile) ?? missile.GetComponent<MissileSeeker>();
+
+                if (seeker is OpticalSeekerCruiseMissile cruise)
+                {
+                    CruiseKnownPos?.SetValue(cruise, known);
+                    CruiseAimPos?.SetValue(cruise, known);
+                    CruiseKnownVel?.SetValue(cruise, Vector3.zero);
+                    CruiseTerminal?.SetValue(cruise, false);
+                    CruiseGuidance?.SetValue(cruise, true);
+                    CruiseTargetPart?.SetValue(cruise, null);
+                }
+                else if (seeker is BallisticMissileGuidance ballistic)
+                {
+                    BallisticKnownPos?.SetValue(ballistic, known);
+                    BallisticKnownVel?.SetValue(ballistic, Vector3.zero);
+                }
+
+                missile.SetAimpoint(known, Vector3.zero);
+                MissileAccess.ClearProxyFuse(missile);
+
+                RcPlugin.ModLogger?.LogInfo(
+                    $"RC handoff → terminal impact hold ({missile.unitName ?? missile.name})");
+            }
+            catch (System.Exception ex)
+            {
+                RcPlugin.ModLogger?.LogWarning($"Impact handoff failed: {ex.Message}");
+                CommitForAutonomous(missile);
+            }
+        }
+
         private static void ApplyInternal(Missile missile, bool writeAimpoint, bool log)
         {
             if (missile == null || missile.disabled)
@@ -77,8 +137,24 @@ namespace MissileCameraRemoteControl.Control
                 // ignore
             }
 
+            // Impact-only RC: never force-detonate on release. Dead/cleared lock → resume Seek / SD blocked by gate.
             if (unit == null || unit.disabled)
+            {
+                if (writeAimpoint)
+                {
+                    try
+                    {
+                        if (seeker is OpticalSeekerCruiseMissile cruise)
+                            CruiseGuidance?.SetValue(cruise, true);
+                    }
+                    catch
+                    {
+                        // ignore
+                    }
+                }
+
                 return;
+            }
 
             GlobalPosition known = ResolveKnownPosition(missile, unit);
             Vector3 knownVel = Vector3.zero;
@@ -107,27 +183,9 @@ namespace MissileCameraRemoteControl.Control
                     ApplyGeneric(missile, known, knownVel);
             }
 
-            // Proxy only on Release commit, and only if seeker wants proximity (vanilla).
-            if (writeAimpoint && seeker.proximityFuse)
-            {
-                try
-                {
-                    Transform? tf = unit.transform;
-                    Rigidbody? rb = null;
-                    try { rb = unit.rb; }
-                    catch { rb = unit.GetComponent<Rigidbody>(); }
-                    if (tf != null)
-                        missile.SetProxyFuse(tf, rb);
-                }
-                catch
-                {
-                    // ignore
-                }
-            }
-            else if (!writeAimpoint)
-            {
+            // Never arm proxy on RC clones (impact fuse only — SetProxyFuse also Harmony-blocked).
+            if (!writeAimpoint)
                 Access.MissileAccess.ClearProxyFuse(missile);
-            }
 
             if (log)
             {

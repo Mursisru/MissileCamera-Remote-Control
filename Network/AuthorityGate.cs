@@ -1,3 +1,4 @@
+using MissileCameraRemoteControl.Config;
 using NuclearOption.Networking;
 
 namespace MissileCameraRemoteControl.Network
@@ -63,7 +64,49 @@ namespace MissileCameraRemoteControl.Network
                 return false;
             try
             {
-                return missile.NetworkHQ != null && missile.NetworkHQ == hq;
+                FactionHQ? mHq = null;
+                try { mHq = missile.NetworkHQ; }
+                catch { /* ignore */ }
+                if (mHq == null)
+                {
+                    try { mHq = missile.MapHQ; }
+                    catch { /* ignore */ }
+                }
+
+                if (mHq != null && mHq == hq)
+                    return true;
+
+                // AllowAnyMunition: some mod missiles leave NetworkHQ unset — fall back to owner / local aircraft.
+                if (!RcConfig.AllowAnyMunition.Value)
+                    return false;
+
+                Unit? owner = null;
+                try { owner = missile.owner; }
+                catch { /* ignore */ }
+
+                if (owner != null)
+                {
+                    FactionHQ? oHq = null;
+                    try { oHq = owner.NetworkHQ; }
+                    catch { /* ignore */ }
+                    if (oHq == null)
+                    {
+                        try { oHq = owner.MapHQ; }
+                        catch { /* ignore */ }
+                    }
+
+                    if (oHq != null && oHq == hq)
+                        return true;
+                }
+
+                if (GameManager.GetLocalAircraft(out Aircraft local)
+                    && local != null
+                    && !local.disabled
+                    && owner != null
+                    && ReferenceEquals(owner, local))
+                    return true;
+
+                return false;
             }
             catch
             {

@@ -1,8 +1,10 @@
 using System;
+using System.Reflection;
 using BepInEx.Logging;
 using HarmonyLib;
 using MissileCameraRemoteControl.Cloning;
 using MissileCameraRemoteControl.Config;
+using MissileCameraRemoteControl.Update;
 using MissileCameraRemoteControl.Vfx;
 using UnityEngine;
 using UnityEngine.SceneManagement;
@@ -30,6 +32,8 @@ namespace MissileCameraRemoteControl.Control
             _instance = go.AddComponent<RcHost>();
             _instance._log = logger;
             _instance.Bootstrap();
+            RcUpdatePrompt.EnsureOn(go);
+            RcUpdateChecker.StartIfNeeded();
         }
 
         private void Bootstrap()
@@ -48,11 +52,13 @@ namespace MissileCameraRemoteControl.Control
 
             try
             {
-                PatchAllSeekerOverrides(_harmony);
+                PatchAllSeekerOverrides(_harmony, _log);
                 PatchMotorThrust(_harmony);
                 HarmonyPatches.RcMissileCameraThrSnap.TryPatch(_harmony, _log);
                 HarmonyPatches.RcSteeringUprightPatch.TryPatch(_harmony, _log);
+                HarmonyPatches.RcGLimitEnforce.TryPatch(_harmony, _log);
                 HarmonyPatches.RcFeedPoseReticlePatch.TryPatch(_harmony, _log);
+                HarmonyPatches.RcSpaceKeyEatPatch.TryPatch(_harmony, _log);
                 _log?.LogInfo("Harmony patched.");
             }
             catch (Exception ex)
@@ -84,27 +90,85 @@ namespace MissileCameraRemoteControl.Control
             _log?.LogInfo("Motor.Thrust patched (RC afterburner).");
         }
 
-        private static void PatchAllSeekerOverrides(Harmony harmony)
+        private static void PatchAllSeekerOverrides(Harmony harmony, ManualLogSource? log)
         {
             var prefix = new HarmonyMethod(typeof(HarmonyPatches.RcSeekPatch), nameof(HarmonyPatches.RcSeekPatch.Prefix));
             Type seekerBase = typeof(MissileSeeker);
-            foreach (Type type in seekerBase.Assembly.GetTypes())
+            int patched = 0;
+
+            // All loaded assemblies — third-party mod seekers live outside Assembly-CSharp.
+            Assembly[] assemblies;
+            try
             {
-                if (type == null || type == seekerBase || !seekerBase.IsAssignableFrom(type))
+                assemblies = AppDomain.CurrentDomain.GetAssemblies();
+            }
+            catch
+            {
+                assemblies = new[] { seekerBase.Assembly };
+            }
+
+            for (int a = 0; a < assemblies.Length; a++)
+            {
+                Assembly asm = assemblies[a];
+                if (asm == null)
                     continue;
-                System.Reflection.MethodInfo? seek = type.GetMethod(
-                    "Seek",
-                    System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.DeclaredOnly);
-                if (seek == null)
-                    continue;
+
+                Type[] types;
                 try
                 {
-                    harmony.Patch(seek, prefix: prefix);
+                    types = asm.GetTypes();
+                }
+                catch (ReflectionTypeLoadException ex)
+                {
+                    types = ex.Types;
                 }
                 catch
                 {
-                    // ignore
+                    continue;
                 }
+
+                if (types == null)
+                    continue;
+
+                for (int i = 0; i < types.Length; i++)
+                {
+                    Type? type = types[i];
+                    if (type == null || type == seekerBase || !seekerBase.IsAssignableFrom(type))
+                        continue;
+
+                    MethodInfo? seek = type.GetMethod(
+                        "Seek",
+                        BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.DeclaredOnly);
+                    if (seek == null)
+                        continue;
+
+                    try
+                    {
+                        harmony.Patch(seek, prefix: prefix);
+                        patched++;
+                    }
+                    catch
+                    {
+                        // ignore
+                    }
+                }
+            }
+
+            log?.LogInfo($"Seek overrides patched on {patched} MissileSeeker type(s) (all assemblies).");
+        }
+
+        /// <summary>Re-scan assemblies after mods load late (scene enter / AllowAny Take).</summary>
+        internal static void RefreshSeekerPatches()
+        {
+            if (_instance?._harmony == null)
+                return;
+            try
+            {
+                PatchAllSeekerOverrides(_instance._harmony, _instance._log);
+            }
+            catch (Exception ex)
+            {
+                _instance._log?.LogWarning($"Seek re-patch failed: {ex.Message}");
             }
         }
 
@@ -128,6 +192,7 @@ namespace MissileCameraRemoteControl.Control
         {
             Access.MissileCameraFsAccess.TryResolveNow();
             Network.RcBoostStateSync.EnsureRegistered();
+            RefreshSeekerPatches();
             TryBootstrapClones("scene_loaded:" + scene.name);
         }
 
@@ -220,6 +285,8 @@ namespace MissileCameraRemoteControl.Control
                     return;
                 }
 
+                // Manual fuse first in the frame — minimize input→boom latency.
+                RcManualDetonate.Tick();
                 RemoteControlSession.Tick();
                 RcFsOwnshipGuard.Tick();
             }

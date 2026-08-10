@@ -5,11 +5,20 @@ namespace MissileCameraRemoteControl.Config
 {
     internal static class RcConfig
     {
+        internal static bool IsBound { get; private set; }
+
         internal static ConfigEntry<bool> Enabled { get; private set; } = null!;
         internal static ConfigEntry<bool> AiEquipRcClones { get; private set; } = null!;
+        /// <summary>When false (default): only official RC clones. When true: any allied LocalSim munition.</summary>
+        internal static ConfigEntry<bool> AllowAnyMunition { get; private set; } = null!;
+        internal static ConfigEntry<bool> AamProximityDetonate { get; private set; } = null!;
+        internal static ConfigEntry<float> AamProxHorizM { get; private set; } = null!;
+        internal static ConfigEntry<float> AamProxVertM { get; private set; } = null!;
+        internal static ConfigEntry<float> AamProxMaxRangeM { get; private set; } = null!;
         internal static ConfigEntry<float> MouseSensitivity { get; private set; } = null!;
         internal static ConfigEntry<float> KeyAimSensitivity { get; private set; } = null!;
         internal static ConfigEntry<float> AimDistance { get; private set; } = null!;
+        internal static ConfigEntry<float> AimLagSeconds { get; private set; } = null!;
         internal static ConfigEntry<RcAimInputMode> AimInputMode { get; private set; } = null!;
         internal static ConfigEntry<float> JetBoostThrottle { get; private set; } = null!;
         internal static ConfigEntry<float> JetBoostBurnMult { get; private set; } = null!;
@@ -23,6 +32,9 @@ namespace MissileCameraRemoteControl.Config
         internal static ConfigEntry<float> JamEcmThreshold { get; private set; } = null!;
         internal static ConfigEntry<float> ServerPresenceTimeout { get; private set; } = null!;
 
+        internal static ConfigEntry<bool> CheckForUpdates { get; private set; } = null!;
+        internal static ConfigEntry<bool> UpdatePromptDontShowAgain { get; private set; } = null!;
+
         internal static ConfigEntry<KeyboardShortcut> ToggleControl { get; private set; } = null!;
         internal static ConfigEntry<KeyboardShortcut> OpenMissileList { get; private set; } = null!;
         internal static ConfigEntry<KeyboardShortcut> ThrottleUp { get; private set; } = null!;
@@ -32,21 +44,42 @@ namespace MissileCameraRemoteControl.Config
         internal static ConfigEntry<KeyboardShortcut> AimYawRight { get; private set; } = null!;
         internal static ConfigEntry<KeyboardShortcut> AimPitchUp { get; private set; } = null!;
         internal static ConfigEntry<KeyboardShortcut> AimPitchDown { get; private set; } = null!;
+        internal static ConfigEntry<KeyboardShortcut> FormationFollow { get; private set; } = null!;
+        internal static ConfigEntry<KeyboardShortcut> ManualDetonate { get; private set; } = null!;
+        internal static ConfigEntry<bool> AutoFormationFollow { get; private set; } = null!;
 
         internal static void Bind(ConfigFile config)
         {
             Enabled = config.Bind("General", "Enabled", true, "Master enable for Remote Control.");
             AiEquipRcClones = config.Bind("General", "AiEquipRcClones", true,
                 "AI aircraft equip RC (DL/SATCOM) clones instead of vanilla whitelist mounts. Bots do not remote-pilot — Seek runs normally.");
+            AllowAnyMunition = config.Bind("General", "AllowAnyMunition", false,
+                "If false (default): only official MissileCamera RC clones can be remote-controlled. If true: any allied LocalSim munition (including other mods).");
 
-            AimInputMode = config.Bind("Control", "AimInputMode", RcAimInputMode.Both,
-                "Mouse = mouse only; Keys = remappable keys only; Both = mouse + keys (WASD/arrows/numpad via binds below).");
+            CheckForUpdates = config.Bind("Updates", "CheckForUpdates", true,
+                "Check GitHub for a newer full release (not pre-release) on launch. Offline = silent.");
+            UpdatePromptDontShowAgain = config.Bind("Updates", "DontShowAgain", false,
+                "If true, never show the outdated-version prompt (set by the in-game checkbox).");
+
+            AamProximityDetonate = config.Bind("Control", "AamProximityDetonate", true,
+                "Under RC: auto-detonate AAM-46 (and other AAM when AllowAnyMunition) near locked target (horizontal + vertical miss gates).");
+            AamProxHorizM = config.Bind("Control", "AamProxHorizM", 14f,
+                "Max horizontal-plane miss (meters) from missile to target for AAM proximity burst.");
+            AamProxVertM = config.Bind("Control", "AamProxVertM", 14f,
+                "Max vertical separation (meters) for AAM proximity burst.");
+            AamProxMaxRangeM = config.Bind("Control", "AamProxMaxRangeM", 55f,
+                "Max slant range (meters) to evaluate AAM proximity burst.");
+
+            AimInputMode = config.Bind("Control", "AimInputMode", RcAimInputMode.Mouse,
+                "Mouse | WASD | Arrows | NumPadArrows | Custom. Custom uses AimYaw/Pitch binds below.");
             MouseSensitivity = config.Bind("Control", "MouseSensitivity", 0.08f,
                 "Mouse aim rate for world-space WT reticle (lower = smoother).");
             KeyAimSensitivity = config.Bind("Control", "KeyAimSensitivity", 1f,
                 "Keyboard/numpad aim rate multiplier (degrees/sec scale).");
             AimDistance = config.Bind("Control", "AimDistance", 4000f,
                 "World aim / command point distance (meters).");
+            AimLagSeconds = config.Bind("Control", "AimLagSeconds", 0.3f,
+                "Extra ease on nose turn rate (0 = stock gLimit only). Nose always reaches the direction marker.");
 
             JetBoostThrottle = config.Bind("Throttle", "JetBoostThrottle", 1.5f, "Jet afterburner throttle multiplier (>1).");
             JetBoostBurnMult = config.Bind("Throttle", "JetBoostBurnMult", 2.5f, "Jet fuel burn multiplier during boost.");
@@ -76,20 +109,28 @@ namespace MissileCameraRemoteControl.Config
                 "Decrease throttle (hold to ramp).");
             Boost = config.Bind("Keybinds", "Afterburner", new KeyboardShortcut(KeyCode.LeftShift),
                 "Hold afterburner / turbo-boost.");
+            FormationFollow = config.Bind("Keybinds", "FormationFollow", new KeyboardShortcut(KeyCode.P),
+                "Toggle formation: other allied RC missiles follow the controlled lead.");
+            ManualDetonate = config.Bind("Keybinds", "ManualDetonate", new KeyboardShortcut(KeyCode.Space),
+                "While FS+RC: instant vanilla Detonate (Space eaten so the game never sees it). Nuclear: near surface only.");
+            AutoFormationFollow = config.Bind("Control", "AutoFormationFollow", false,
+                "If true, engage formation follow automatically when taking RC (P still toggles).");
 
-            // Defaults: arrows. Rebind to WASD / numpad / anything in the cfg (BepInEx KeyboardShortcut).
-            AimYawLeft = config.Bind("Keybinds", "AimYawLeft", new KeyboardShortcut(KeyCode.LeftArrow),
-                "Yaw aim left (hold). Example WASD: A; numpad: Keypad4.");
-            AimYawRight = config.Bind("Keybinds", "AimYawRight", new KeyboardShortcut(KeyCode.RightArrow),
-                "Yaw aim right (hold). Example WASD: D; numpad: Keypad6.");
-            AimPitchUp = config.Bind("Keybinds", "AimPitchUp", new KeyboardShortcut(KeyCode.UpArrow),
-                "Pitch aim up (hold). Example WASD: W; numpad: Keypad8.");
-            AimPitchDown = config.Bind("Keybinds", "AimPitchDown", new KeyboardShortcut(KeyCode.DownArrow),
-                "Pitch aim down (hold). Example WASD: S; numpad: Keypad5 or Keypad2.");
+            // Used only when AimInputMode = Custom.
+            AimYawLeft = config.Bind("CustomAim", "AimYawLeft", new KeyboardShortcut(KeyCode.A),
+                "Custom mode: yaw aim left (hold).");
+            AimYawRight = config.Bind("CustomAim", "AimYawRight", new KeyboardShortcut(KeyCode.D),
+                "Custom mode: yaw aim right (hold).");
+            AimPitchUp = config.Bind("CustomAim", "AimPitchUp", new KeyboardShortcut(KeyCode.W),
+                "Custom mode: pitch aim up (hold).");
+            AimPitchDown = config.Bind("CustomAim", "AimPitchDown", new KeyboardShortcut(KeyCode.S),
+                "Custom mode: pitch aim down (hold).");
+
+            IsBound = true;
 
             RcPlugin.ModLogger?.LogInfo(
-                $"RC binds: Take={ToggleControl.Value} List={OpenMissileList.Value} AimMode={AimInputMode.Value} " +
-                $"Aim=[{AimYawLeft.Value}/{AimYawRight.Value}/{AimPitchUp.Value}/{AimPitchDown.Value}] " +
+                $"RC binds: Take={ToggleControl.Value} List={OpenMissileList.Value} Form={FormationFollow.Value} AimMode={AimInputMode.Value} " +
+                $"CustomAim=[{AimYawLeft.Value}/{AimYawRight.Value}/{AimPitchUp.Value}/{AimPitchDown.Value}] " +
                 $"Thr+={ThrottleUp.Value} Thr-={ThrottleDown.Value} AB={Boost.Value}");
         }
     }

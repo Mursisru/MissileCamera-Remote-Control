@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Reflection;
 using MissileCameraRemoteControl.Config;
 using UnityEngine;
@@ -16,6 +17,15 @@ namespace MissileCameraRemoteControl.Access
 
         private static readonly FieldInfo? SeekerField =
             typeof(Missile).GetField("seeker", BindingFlags.Instance | BindingFlags.NonPublic);
+
+        private static readonly FieldInfo? SeekerTargetField =
+            typeof(MissileSeeker).GetField("targetUnit", BindingFlags.Instance | BindingFlags.NonPublic | BindingFlags.Public);
+
+        private static readonly FieldInfo? MissileTargetField =
+            typeof(Missile).GetField("target", BindingFlags.Instance | BindingFlags.NonPublic | BindingFlags.Public);
+
+        private static readonly FieldInfo? AimPointField =
+            typeof(Missile).GetField("aimPoint", BindingFlags.Instance | BindingFlags.NonPublic | BindingFlags.Public);
 
         private static readonly FieldInfo? BurnRateField =
             MotorType?.GetField("burnRate", BindingFlags.Instance | BindingFlags.NonPublic);
@@ -36,10 +46,40 @@ namespace MissileCameraRemoteControl.Access
         private static readonly FieldInfo? ProxyFuseField =
             typeof(Missile).GetField("proxyFuse", BindingFlags.Instance | BindingFlags.NonPublic);
 
+        private static readonly FieldInfo? GLimitField =
+            typeof(Missile).GetField("gLimit", BindingFlags.Instance | BindingFlags.NonPublic | BindingFlags.Public);
+
+        private static readonly FieldInfo? MaxTurnRateField =
+            typeof(Missile).GetField("maxTurnRate", BindingFlags.Instance | BindingFlags.NonPublic | BindingFlags.Public);
+
         private static readonly MethodInfo? ThrustMethod =
             MotorType?.GetMethod("Thrust", BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic);
 
+        private static readonly FieldInfo? BlastYieldField =
+            typeof(Missile).GetField("blastYield", BindingFlags.Instance | BindingFlags.NonPublic | BindingFlags.Public);
+
+        private static readonly HashSet<int> _proxyClearedIds = new HashSet<int>(8);
+        private static readonly Dictionary<int, bool> _rcMissileCache = new Dictionary<int, bool>(64);
+
         internal static MethodInfo? MotorThrustMethod => ThrustMethod;
+
+        internal static void ClearProxyLatch() => _proxyClearedIds.Clear();
+
+        /// <summary>True while any motor still has burn/fuel left (AB meaningless at 0% FUEL).</summary>
+        internal static bool HasMotorFuel(Missile? missile)
+        {
+            if (missile == null || missile.disabled)
+                return false;
+            try
+            {
+                float rem = missile.GetRemainingBurnTime();
+                return !float.IsNaN(rem) && !float.IsInfinity(rem) && rem > 0.05f;
+            }
+            catch
+            {
+                return false;
+            }
+        }
 
         /// <summary>
         /// Null private ProxyFuse — while RC, near-miss CPA airburst must not fire
@@ -59,6 +99,18 @@ namespace MissileCameraRemoteControl.Access
             {
                 // ignore
             }
+        }
+
+        /// <summary>Hot path: skip GetValue after first clear (SetProxyFuse blocked for RC).</summary>
+        internal static void ClearProxyFuseOnce(Missile? missile)
+        {
+            if (missile == null)
+                return;
+            int id = missile.GetInstanceID();
+            if (_proxyClearedIds.Contains(id))
+                return;
+            ClearProxyFuse(missile);
+            _proxyClearedIds.Add(id);
         }
 
         internal static Array? GetMotors(Missile missile)
@@ -86,6 +138,276 @@ namespace MissileCameraRemoteControl.Access
             catch
             {
                 return null;
+            }
+        }
+
+        /// <summary>
+        /// Nuclear / strategic yield — game uses blastYield&gt;200 for nuke VFX;
+        /// also name/key heuristics (ALND, 20kt, tacNuke).
+        /// </summary>
+        internal static bool IsNuclearWarhead(Missile? missile)
+        {
+            if (missile == null)
+                return false;
+            try
+            {
+                float yield = 0f;
+                try { yield = missile.GetYield(); }
+                catch
+                {
+                    if (BlastYieldField != null)
+                        yield = (float)BlastYieldField.GetValue(missile)!;
+                }
+
+                // Vanilla Warhead.Detonate special-cases blastYield > 200 as nuclear package.
+                if (yield > 200f)
+                    return true;
+
+                string? unit = missile.unitName;
+                if (NameLooksNuclear(unit))
+                    return true;
+
+                WeaponInfo? info = GetMissileInfo(missile);
+                if (info != null)
+                {
+                    if (NameLooksNuclear(info.weaponName) || NameLooksNuclear(info.shortName))
+                        return true;
+                }
+
+                RcMissileTag? tag = missile.GetComponent<RcMissileTag>();
+                if (tag != null && NameLooksNuclear(tag.SourceMountKey))
+                    return true;
+            }
+            catch
+            {
+                // ignore
+            }
+
+            return false;
+        }
+
+        private static bool NameLooksNuclear(string? s)
+        {
+            if (string.IsNullOrEmpty(s))
+                return false;
+            if (s!.IndexOf("ALND", StringComparison.OrdinalIgnoreCase) >= 0)
+                return true;
+            if (s.IndexOf("20kt", StringComparison.OrdinalIgnoreCase) >= 0)
+                return true;
+            if (s.IndexOf("tacNuke", StringComparison.OrdinalIgnoreCase) >= 0)
+                return true;
+            if (s.IndexOf("nuclear", StringComparison.OrdinalIgnoreCase) >= 0)
+                return true;
+            if (s.IndexOf("Nuke", StringComparison.OrdinalIgnoreCase) >= 0
+                && s.IndexOf("Nuclear Option", StringComparison.OrdinalIgnoreCase) < 0)
+                return true;
+            return false;
+        }
+
+        /// <summary>True when within <paramref name="maxAltM"/> of terrain/sea (radar / sea plane / ray).</summary>
+        internal static bool IsNearSurface(Missile? missile, float maxAltM)
+        {
+            if (missile == null)
+                return false;
+            float maxAlt = Mathf.Max(5f, maxAltM);
+            try
+            {
+                float radar = missile.radarAlt;
+                if (!float.IsNaN(radar) && radar >= 0f && radar <= maxAlt)
+                    return true;
+            }
+            catch
+            {
+                // ignore
+            }
+
+            try
+            {
+                Vector3 p = missile.transform.position;
+                if (p.y - Datum.LocalSeaY <= maxAlt)
+                    return true;
+
+                if (Physics.Raycast(
+                        p,
+                        Vector3.down,
+                        maxAlt + 8f,
+                        PhysicsLayers.StaticsMask | PhysicsLayers.WaterMask,
+                        QueryTriggerInteraction.Ignore))
+                    return true;
+            }
+            catch
+            {
+                // ignore
+            }
+
+            return false;
+        }
+
+        /// <summary>Stock ω_max = min(maxTurnRate, g·gLimit/V) in rad/s.</summary>
+        internal static float GetMaxTurnRateRad(Missile? missile)
+        {
+            if (missile == null)
+                return 9.81f * 12f;
+
+            float gLim = 12f;
+            float maxTurnDeg = 0f;
+            try
+            {
+                if (GLimitField != null)
+                {
+                    float g = (float)GLimitField.GetValue(missile)!;
+                    if (g > 0.1f)
+                        gLim = g;
+                }
+            }
+            catch
+            {
+                // default
+            }
+
+            try
+            {
+                if (MaxTurnRateField != null)
+                    maxTurnDeg = (float)MaxTurnRateField.GetValue(missile)!;
+            }
+            catch
+            {
+                // ignore
+            }
+
+            float speed = 1f;
+            try
+            {
+                if (missile.rb != null)
+                    speed = Mathf.Max(missile.rb.velocity.magnitude, 1f);
+                else
+                    speed = Mathf.Max(missile.speed, 1f);
+            }
+            catch
+            {
+                speed = 1f;
+            }
+
+            float fromG = 9.81f * gLim / speed;
+            if (maxTurnDeg > 0.1f)
+                return Mathf.Min(maxTurnDeg * Mathf.Deg2Rad, fromG);
+            return fromG;
+        }
+
+        internal static float GetGLimit(Missile? missile)
+        {
+            if (missile == null || GLimitField == null)
+                return 12f;
+            try
+            {
+                float g = (float)GLimitField.GetValue(missile)!;
+                return g > 0.1f ? g : 12f;
+            }
+            catch
+            {
+                return 12f;
+            }
+        }
+
+        internal static Unit? TryGetLockedTarget(Missile missile)
+        {
+            if (missile == null)
+                return null;
+
+            try
+            {
+                MissileSeeker? seeker = GetSeeker(missile) ?? missile.GetComponent<MissileSeeker>();
+                if (seeker != null && SeekerTargetField != null)
+                {
+                    Unit? u = SeekerTargetField.GetValue(seeker) as Unit;
+                    if (u != null && !u.disabled)
+                        return u;
+                }
+            }
+            catch
+            {
+                // ignore
+            }
+
+            try
+            {
+                if (MissileTargetField != null)
+                {
+                    Unit? u = MissileTargetField.GetValue(missile) as Unit;
+                    if (u != null && !u.disabled)
+                        return u;
+                }
+            }
+            catch
+            {
+                // ignore
+            }
+
+            return null;
+        }
+
+        /// <summary>Read private Missile.aimPoint as local world position.</summary>
+        internal static bool TryGetAimLocal(Missile? missile, out Vector3 local)
+        {
+            local = default;
+            if (missile == null || AimPointField == null)
+                return false;
+            try
+            {
+                object? raw = AimPointField.GetValue(missile);
+                if (raw == null)
+                    return false;
+                GlobalPosition gp = (GlobalPosition)raw;
+                local = gp.ToLocalPosition();
+                return !float.IsNaN(local.x) && local.sqrMagnitude > 1f;
+            }
+            catch
+            {
+                return false;
+            }
+        }
+
+        /// <summary>AAM-46 always; other AAM seekers only when AllowAnyMunition.</summary>
+        internal static bool IsAirToAirMunition(Missile? missile)
+        {
+            if (missile == null || missile.disabled)
+                return false;
+
+            try
+            {
+                WeaponInfo? info = GetMissileInfo(missile);
+                string? name = info != null ? info.weaponName : null;
+                if (!string.IsNullOrEmpty(name))
+                {
+                    string bare = CloneProfile.StripLegacyPrefix(name!);
+                    CloneProfile.SplitWarheadSuffix(bare, out string core, out _);
+                    if (string.Equals(core, CloneProfile.NameAam46Longstrong, System.StringComparison.Ordinal)
+                        || core.IndexOf("AAM-46", System.StringComparison.OrdinalIgnoreCase) >= 0
+                        || core.IndexOf("AAM-36", System.StringComparison.OrdinalIgnoreCase) >= 0)
+                        return true;
+                }
+            }
+            catch
+            {
+                // ignore
+            }
+
+            if (!RcConfig.AllowAnyMunition.Value)
+                return false;
+
+            try
+            {
+                MissileSeeker? seeker = GetSeeker(missile) ?? missile.GetComponent<MissileSeeker>();
+                if (seeker == null)
+                    return false;
+                System.Type t = seeker.GetType();
+                return t == typeof(ARHSeeker)
+                    || t == typeof(IRSeeker)
+                    || t == typeof(SARHSeeker);
+            }
+            catch
+            {
+                return false;
             }
         }
 
@@ -197,15 +519,81 @@ namespace MissileCameraRemoteControl.Access
         {
             if (missile == null)
                 return false;
-            if (missile.GetComponent<RcMissileTag>() != null)
-                return true;
+
+            int id = missile.GetInstanceID();
+            if (_rcMissileCache.TryGetValue(id, out bool cached))
+                return cached;
+
+            bool result = ResolveIsRcMissile(missile);
+            _rcMissileCache[id] = result;
+            return result;
+        }
+
+        private static bool ResolveIsRcMissile(Missile missile)
+        {
             try
             {
+                RcMissileTag? tag = missile.GetComponent<RcMissileTag>();
+                string? name = null;
                 WeaponInfo? info = GetMissileInfo(missile);
-                if (info == null || string.IsNullOrEmpty(info.weaponName))
+                if (info != null)
+                    name = info.weaponName;
+
+                if (tag != null)
+                {
+                    if (tag.OfficialClone || CloneProfile.IsRcCloneKey(tag.SourceMountKey))
+                        return true;
+                    return CloneProfile.IsOfficialRcIdentity(name, tag.SourceMountKey);
+                }
+
+                // Name-only recovery — whitelist display names only (no bare [DL] prefix).
+                return CloneProfile.IsRcDisplayName(name);
+            }
+            catch
+            {
+                return false;
+            }
+        }
+
+        /// <summary>Call after stamping a new RC tag so Detonate gate sees it without stale false cache.</summary>
+        internal static void InvalidateRcMissileCache(Missile? missile)
+        {
+            if (missile == null)
+                return;
+            _rcMissileCache.Remove(missile.GetInstanceID());
+        }
+
+        /// <summary>
+        /// Player remote stick allowed.
+        /// Default: official RC clones only. Config AllowAnyMunition → any living missile (caller still gates authority).
+        /// </summary>
+        internal static bool IsRcControllable(Missile? missile)
+        {
+            if (missile == null || missile.disabled)
+                return false;
+
+            try
+            {
+                if (RcConfig.AllowAnyMunition.Value)
+                {
+                    // Any Missile subclass (incl. other mods). AuthorityGate still requires LocalSim + allied.
+                    return true;
+                }
+
+                if (!IsRcMissile(missile))
                     return false;
-                return CloneProfile.IsRcDisplayName(info.weaponName)
-                    || CloneProfile.TryGetGuidanceFromRcName(info.weaponName, out _);
+
+                RcMissileTag? tag = missile.GetComponent<RcMissileTag>();
+                if (tag != null && !tag.Controllable)
+                    return false;
+
+                string? name = null;
+                WeaponInfo? info = GetMissileInfo(missile);
+                if (info != null)
+                    name = info.weaponName;
+                string source = tag != null ? tag.SourceMountKey : string.Empty;
+                return CloneProfile.IsOfficialRcIdentity(name, source)
+                    || (tag != null && tag.OfficialClone);
             }
             catch
             {

@@ -27,6 +27,7 @@ namespace MissileCameraRemoteControl.Cloning
             _failStreak = 0;
             CloneRegistry.Clear();
             MissileDefinitionCloner.Clear();
+            RcSharedWeaponInfo.Clear();
         }
 
         internal static bool TryRun(ManualLogSource? log)
@@ -70,12 +71,17 @@ namespace MissileCameraRemoteControl.Cloning
                     continue;
 
                 string? weaponName = original.info != null ? original.info.weaponName : null;
-                if (!CloneProfile.TryResolve(original.jsonKey, weaponName, out RcGuidanceKind guidance, out RcEngineKind engine))
+                if (!CloneProfile.TryResolve(
+                        original.jsonKey,
+                        weaponName,
+                        out RcGuidanceKind guidance,
+                        out RcEngineKind engine,
+                        out bool controllable))
                     continue;
 
                 try
                 {
-                    WeaponMount? clone = CloneMount(original, guidance, engine, log);
+                    WeaponMount? clone = CloneMount(original, guidance, engine, controllable, log);
                     if (clone == null)
                     {
                         skipped++;
@@ -107,6 +113,7 @@ namespace MissileCameraRemoteControl.Cloning
             WeaponMount original,
             RcGuidanceKind guidance,
             RcEngineKind engine,
+            bool controllable,
             ManualLogSource? log)
         {
             if (original.info == null || original.prefab == null)
@@ -123,19 +130,17 @@ namespace MissileCameraRemoteControl.Cloning
                 return existing;
             }
 
-            WeaponInfo infoClone = UnityEngine.Object.Instantiate(original.info);
-            infoClone.name = original.info.name + (guidance == RcGuidanceKind.Satcom ? "_RC_SAT" : "_RC_DL");
             string displayName = CloneProfile.MakeDisplayName(
                 original.info.weaponName,
                 guidance,
                 original.jsonKey,
                 original.info.shortName);
-            infoClone.weaponName = displayName;
-            infoClone.shortName = displayName;
-            infoClone.description = RcWeaponDescriptions.Resolve(original.info.weaponName, guidance);
+            string description = RcWeaponDescriptions.Resolve(original.info.weaponName, guidance);
+            string nameSuffix = guidance == RcGuidanceKind.Satcom ? "_RC_SAT" : "_RC_DL";
 
-            // CRITICAL: keep vanilla flying prefab — runtime Instantiates are NOT Mirage-registered and despawn on Spawn().
-            infoClone.weaponPrefab = original.info.weaponPrefab;
+            // Shared WeaponInfo by display name — WeaponManager stacks stations by reference ==.
+            WeaponInfo infoClone = RcSharedWeaponInfo.GetOrCreate(
+                original.info, displayName, description, nameSuffix);
 
             GameObject mountPrefab;
             try
@@ -145,7 +150,7 @@ namespace MissileCameraRemoteControl.Cloning
             catch (Exception ex)
             {
                 log?.LogWarning($"Skip {original.jsonKey}: mount prefab Instantiate failed ({ex.Message})");
-                UnityEngine.Object.Destroy(infoClone);
+                // Do not Destroy infoClone — may be shared across other RC mounts.
                 return null;
             }
 
@@ -182,6 +187,7 @@ namespace MissileCameraRemoteControl.Cloning
             meta.Engine = engine;
             meta.SourceMountKey = original.jsonKey;
             meta.BackupSeekerHint = backupHint;
+            meta.Controllable = controllable;
 
             WeaponMount mountClone = UnityEngine.Object.Instantiate(original);
             mountClone.name = original.name + (guidance == RcGuidanceKind.Satcom ? "_RC_SAT" : "_RC_DL");

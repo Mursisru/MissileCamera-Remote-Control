@@ -13,15 +13,24 @@ namespace MissileCameraRemoteControl.Control
         private static Missile? _controlled;
         private static readonly List<Missile> _pool = new List<Missile>(32);
 
+        // Frame-cached IsActive / CanControl (invalidated in BeginFrame via RcFrameCache).
+        private static int _gateFrame = -1;
+        private static bool _cachedIsActive;
+        private static bool _cachedCanControl;
+        private static Missile? _cachedCanControlMissile;
+
         internal static Missile? Controlled => _controlled;
 
         internal static IReadOnlyList<Missile> Pool => _pool;
 
-        internal static bool IsActive =>
-            _controlled != null
-            && !_controlled.disabled
-            && AuthorityGate.CanControl(_controlled)
-            && MissileCameraFsAccess.IsFullscreenActive;
+        internal static bool IsActive
+        {
+            get
+            {
+                EnsureGateFrame();
+                return _cachedIsActive;
+            }
+        }
 
         internal static bool IsControlling(Missile? missile)
         {
@@ -32,6 +41,34 @@ namespace MissileCameraRemoteControl.Control
         internal static bool OwnsMissile(Missile? missile)
         {
             return missile != null && ReferenceEquals(missile, _controlled) && !_controlled.disabled;
+        }
+
+        private static void EnsureGateFrame()
+        {
+            int f = Time.frameCount;
+            if (f == _gateFrame)
+                return;
+            _gateFrame = f;
+            _cachedCanControlMissile = null;
+
+            if (_controlled == null || _controlled.disabled)
+            {
+                _cachedIsActive = false;
+                _cachedCanControl = false;
+                return;
+            }
+
+            _cachedCanControl = AuthorityGate.CanControl(_controlled);
+            _cachedCanControlMissile = _controlled;
+            _cachedIsActive = _cachedCanControl && MissileCameraFsAccess.IsFullscreenActive;
+        }
+
+        internal static bool CachedCanControl(Missile missile)
+        {
+            EnsureGateFrame();
+            if (ReferenceEquals(missile, _cachedCanControlMissile))
+                return _cachedCanControl;
+            return AuthorityGate.CanControl(missile);
         }
 
         internal static void Clear()
@@ -54,6 +91,7 @@ namespace MissileCameraRemoteControl.Control
                     RcPlugin.ModLogger?.LogInfo($"RC released: {_controlled.name}");
             }
             _controlled = null;
+            _gateFrame = -1;
             FsAimReticle.SetVisible(false);
             MouseGuidanceController.Reset();
             ThrottleController.Reset();
@@ -62,6 +100,11 @@ namespace MissileCameraRemoteControl.Control
             RcSeekerSuppress.Reset();
             RcBallisticImpactSafety.Reset();
             RcUprightAssist.ResetSaved();
+            MissileAccess.ClearProxyLatch();
+            AfterburnerVfxBinder.ClearCache();
+            RcStatusHud.DestroyUi();
+            RcFormationFollow.HandoffAndClear();
+            RcSeekSkipSet.Clear();
             if (restoreTargets)
                 RcAircraftTargetSnapshot.Restore();
             else
@@ -83,14 +126,55 @@ namespace MissileCameraRemoteControl.Control
             }
 
             RefreshPool();
-            Missile? best = PickNearest(_pool);
+            Missile? best = PickForTake(_pool);
             if (best == null)
-            {
-                RcPlugin.ModLogger?.LogInfo("RC: no allied clone missiles available.");
                 return;
-            }
 
             Take(best);
+        }
+
+        /// <summary>Prefer the missile on the FS feed; fallback nearest to ownship.</summary>
+        private static Missile? PickForTake(List<Missile> pool)
+        {
+            if (pool.Count == 0)
+                return null;
+
+            try
+            {
+                Missile? followed = MissileCameraFsAccess.TryGetFollowedMissile();
+                if (followed != null && !followed.disabled)
+                {
+                    for (int i = 0; i < pool.Count; i++)
+                    {
+                        if (ReferenceEquals(pool[i], followed))
+                            return followed;
+                    }
+
+                    if (MissileAccess.IsRcControllable(followed)
+                        && AuthorityGate.CanControl(followed)
+                        && AuthorityGate.IsAllied(followed))
+                        return followed;
+
+                    // Do not silently Take a different missile while FS shows another — that felt like "T does nothing".
+                    string hint = RcConfig.AllowAnyMunition.Value
+                        ? "RC: FS munition is not allied / LocalSim — cannot take."
+                        : $"RC: FS missile '{followed.unitName ?? followed.name}' is not an official RC clone — equip a DL/SATCOM mount (or enable General.AllowAnyMunition).";
+                    RcPlugin.ModLogger?.LogInfo(hint);
+                    return null;
+                }
+            }
+            catch
+            {
+                // fall through
+            }
+
+            if (pool.Count == 0)
+            {
+                RcPlugin.ModLogger?.LogInfo("RC: no allied clone missiles available.");
+                return null;
+            }
+
+            return PickNearest(pool);
         }
 
         internal static void Take(Missile missile)
@@ -99,12 +183,16 @@ namespace MissileCameraRemoteControl.Control
                 return;
             if (missile == null || !AuthorityGate.CanControl(missile) || !AuthorityGate.IsAllied(missile))
                 return;
-            if (!MissileAccess.IsRcMissile(missile))
+            if (!MissileAccess.IsRcControllable(missile))
                 return;
 
             RcMissilePickerUi.Close();
             Release(silent: true, restoreTargets: false);
+            // AllowAny / late-loaded mod seekers: ensure Seek Prefix covers their assemblies.
+            if (RcConfig.AllowAnyMunition.Value)
+                RcHost.RefreshSeekerPatches();
             _controlled = missile;
+            _gateFrame = -1;
             MouseGuidanceController.Reset();
             RcLinkQuality.Reset();
             FsAimReticle.SetVisible(true);
@@ -115,6 +203,10 @@ namespace MissileCameraRemoteControl.Control
             RcSeekerSuppress.Tick(missile);
             RcWarheadSafety.Tick(missile);
             RcLinkQuality.Evaluate(missile);
+            RcSeekSkipSet.Rebuild();
+            RcLivingRcRegistry.Notify(missile);
+            if (RcConfig.AutoFormationFollow.Value)
+                RcFormationFollow.EngageFromTake(missile);
             RcPlugin.ModLogger?.LogInfo($"RC engaged (FS): {missile.name}");
         }
 
@@ -148,8 +240,14 @@ namespace MissileCameraRemoteControl.Control
             if (KeybindPoll.IsDown(RcConfig.ToggleControl.Value) && !RcMissilePickerUi.IsOpen)
                 ToggleNearest();
 
+            if (KeybindPoll.IsDown(RcConfig.FormationFollow.Value) && !RcMissilePickerUi.IsOpen)
+                RcFormationFollow.ToggleFromControlled();
+
             if (!IsActive || _controlled == null)
+            {
+                RcStatusHud.Tick();
                 return;
+            }
 
             // Lost: keep stick (thr like Degraded). Auto-Release handed aim to Seek near jam/targets.
             RcLinkQuality.Evaluate(_controlled);
@@ -159,6 +257,7 @@ namespace MissileCameraRemoteControl.Control
             RcRetargetController.Tick(_controlled);
             MouseGuidanceController.Tick(_controlled);
             ThrottleController.Tick(_controlled);
+            RcStatusHud.Tick();
         }
 
         internal static void FixedTick()
@@ -167,12 +266,11 @@ namespace MissileCameraRemoteControl.Control
             if (m == null || m.disabled)
                 return;
 
-            if (OwnsMissile(m))
-                RcBallisticImpactSafety.FixedTick(m);
-
             if (!IsActive)
                 return;
             ThrottleController.Reinforce(m);
+            RcFormationFollow.Tick();
+            RcAamProximityDetonate.Tick(m);
         }
 
         internal static void RefreshPool()
@@ -180,22 +278,50 @@ namespace MissileCameraRemoteControl.Control
             _pool.Clear();
             try
             {
+                bool anyMunition = RcConfig.AllowAnyMunition.Value;
+
+                if (!anyMunition && RcLivingRcRegistry.TryCopyAlive(_pool))
+                {
+                    FilterPoolInPlace();
+                    if (_pool.Count > 0)
+                        return;
+                    _pool.Clear();
+                }
+
+                // Fallback / AllowAny: scan world missiles.
                 Missile[] all = Object.FindObjectsOfType<Missile>();
                 for (int i = 0; i < all.Length; i++)
                 {
                     Missile m = all[i];
                     if (m == null || m.disabled)
                         continue;
-                    if (!MissileAccess.IsRcMissile(m))
+                    if (!MissileAccess.IsRcControllable(m))
                         continue;
                     if (!AuthorityGate.CanControl(m) || !AuthorityGate.IsAllied(m))
                         continue;
                     _pool.Add(m);
+                    if (!anyMunition)
+                        RcLivingRcRegistry.Notify(m);
                 }
             }
             catch
             {
                 _pool.Clear();
+            }
+        }
+
+        private static void FilterPoolInPlace()
+        {
+            for (int i = _pool.Count - 1; i >= 0; i--)
+            {
+                Missile m = _pool[i];
+                if (m == null || m.disabled
+                    || !MissileAccess.IsRcControllable(m)
+                    || !AuthorityGate.CanControl(m)
+                    || !AuthorityGate.IsAllied(m))
+                {
+                    _pool.RemoveAt(i);
+                }
             }
         }
 
