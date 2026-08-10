@@ -34,6 +34,10 @@ namespace MissileCameraRemoteControl.HarmonyPatches
                 if (blastDamage < MinLethalBlast || amountAffected < MinAmountAffected)
                     return true;
 
+                // Formation wingmen must NOT chain-detonate when the lead (or another ally RC) cooks off.
+                if (RcFormationFollow.IsFollower(__instance))
+                    return true;
+
                 // Same-owner / self / invalid dealer: vanilla returns before Detonate.
                 bool blockedDealer = dealerID.NotValid
                     || dealerID == __instance.persistentID

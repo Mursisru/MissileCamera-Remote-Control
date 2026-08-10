@@ -103,7 +103,7 @@ namespace MissileCameraRemoteControl.Control
             MissileAccess.ClearProxyLatch();
             AfterburnerVfxBinder.ClearCache();
             RcStatusHud.DestroyUi();
-            RcFormationFollow.Clear();
+            RcFormationFollow.HandoffAndClear();
             RcSeekSkipSet.Clear();
             if (restoreTargets)
                 RcAircraftTargetSnapshot.Restore();
@@ -188,6 +188,9 @@ namespace MissileCameraRemoteControl.Control
 
             RcMissilePickerUi.Close();
             Release(silent: true, restoreTargets: false);
+            // AllowAny / late-loaded mod seekers: ensure Seek Prefix covers their assemblies.
+            if (RcConfig.AllowAnyMunition.Value)
+                RcHost.RefreshSeekerPatches();
             _controlled = missile;
             _gateFrame = -1;
             MouseGuidanceController.Reset();

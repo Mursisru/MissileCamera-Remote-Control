@@ -55,6 +55,9 @@ namespace MissileCameraRemoteControl.Access
         private static readonly MethodInfo? ThrustMethod =
             MotorType?.GetMethod("Thrust", BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic);
 
+        private static readonly FieldInfo? BlastYieldField =
+            typeof(Missile).GetField("blastYield", BindingFlags.Instance | BindingFlags.NonPublic | BindingFlags.Public);
+
         private static readonly HashSet<int> _proxyClearedIds = new HashSet<int>(8);
         private static readonly Dictionary<int, bool> _rcMissileCache = new Dictionary<int, bool>(64);
 
@@ -136,6 +139,108 @@ namespace MissileCameraRemoteControl.Access
             {
                 return null;
             }
+        }
+
+        /// <summary>
+        /// Nuclear / strategic yield — game uses blastYield&gt;200 for nuke VFX;
+        /// also name/key heuristics (ALND, 20kt, tacNuke).
+        /// </summary>
+        internal static bool IsNuclearWarhead(Missile? missile)
+        {
+            if (missile == null)
+                return false;
+            try
+            {
+                float yield = 0f;
+                try { yield = missile.GetYield(); }
+                catch
+                {
+                    if (BlastYieldField != null)
+                        yield = (float)BlastYieldField.GetValue(missile)!;
+                }
+
+                // Vanilla Warhead.Detonate special-cases blastYield > 200 as nuclear package.
+                if (yield > 200f)
+                    return true;
+
+                string? unit = missile.unitName;
+                if (NameLooksNuclear(unit))
+                    return true;
+
+                WeaponInfo? info = GetMissileInfo(missile);
+                if (info != null)
+                {
+                    if (NameLooksNuclear(info.weaponName) || NameLooksNuclear(info.shortName))
+                        return true;
+                }
+
+                RcMissileTag? tag = missile.GetComponent<RcMissileTag>();
+                if (tag != null && NameLooksNuclear(tag.SourceMountKey))
+                    return true;
+            }
+            catch
+            {
+                // ignore
+            }
+
+            return false;
+        }
+
+        private static bool NameLooksNuclear(string? s)
+        {
+            if (string.IsNullOrEmpty(s))
+                return false;
+            if (s!.IndexOf("ALND", StringComparison.OrdinalIgnoreCase) >= 0)
+                return true;
+            if (s.IndexOf("20kt", StringComparison.OrdinalIgnoreCase) >= 0)
+                return true;
+            if (s.IndexOf("tacNuke", StringComparison.OrdinalIgnoreCase) >= 0)
+                return true;
+            if (s.IndexOf("nuclear", StringComparison.OrdinalIgnoreCase) >= 0)
+                return true;
+            if (s.IndexOf("Nuke", StringComparison.OrdinalIgnoreCase) >= 0
+                && s.IndexOf("Nuclear Option", StringComparison.OrdinalIgnoreCase) < 0)
+                return true;
+            return false;
+        }
+
+        /// <summary>True when within <paramref name="maxAltM"/> of terrain/sea (radar / sea plane / ray).</summary>
+        internal static bool IsNearSurface(Missile? missile, float maxAltM)
+        {
+            if (missile == null)
+                return false;
+            float maxAlt = Mathf.Max(5f, maxAltM);
+            try
+            {
+                float radar = missile.radarAlt;
+                if (!float.IsNaN(radar) && radar >= 0f && radar <= maxAlt)
+                    return true;
+            }
+            catch
+            {
+                // ignore
+            }
+
+            try
+            {
+                Vector3 p = missile.transform.position;
+                if (p.y - Datum.LocalSeaY <= maxAlt)
+                    return true;
+
+                if (Physics.Raycast(
+                        p,
+                        Vector3.down,
+                        maxAlt + 8f,
+                        PhysicsLayers.StaticsMask | PhysicsLayers.WaterMask,
+                        QueryTriggerInteraction.Ignore))
+                    return true;
+            }
+            catch
+            {
+                // ignore
+            }
+
+            return false;
         }
 
         /// <summary>Stock ω_max = min(maxTurnRate, g·gLimit/V) in rad/s.</summary>
@@ -470,7 +575,10 @@ namespace MissileCameraRemoteControl.Access
             try
             {
                 if (RcConfig.AllowAnyMunition.Value)
+                {
+                    // Any Missile subclass (incl. other mods). AuthorityGate still requires LocalSim + allied.
                     return true;
+                }
 
                 if (!IsRcMissile(missile))
                     return false;

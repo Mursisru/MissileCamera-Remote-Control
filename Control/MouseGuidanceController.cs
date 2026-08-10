@@ -138,7 +138,10 @@ namespace MissileCameraRemoteControl.Control
             }
         }
 
-        /// <summary>Reticle follows desired marker (not lagged command).</summary>
+        /// <summary>
+        /// Reticle = looking feed viewport of desired aim (same plane as MC bore HUD).
+        /// Free-look must NOT use bore-viewport math — that glued the marker to screen center.
+        /// </summary>
         internal static void LateProject()
         {
             Missile? missile = _lastMissile;
@@ -151,25 +154,15 @@ namespace MissileCameraRemoteControl.Control
             Transform mt = missile.transform;
 
             Vector3 aimDir = _desiredAimDir.sqrMagnitude > 1e-8f ? _desiredAimDir.normalized : mt.forward;
-            Vector3 projectPoint = mt.position + aimDir * ProjectDistance;
 
             if (feed != null)
             {
-                Vector3 vp = Vector3.zero;
-                bool projected = false;
-                if (Input.GetMouseButton(1)
-                    && MissileCameraFsAccess.TryWorldToBoreViewport(feed, projectPoint, out vp))
-                {
-                    projected = true;
-                }
-                else
-                {
-                    projectPoint = feed.transform.position + aimDir * ProjectDistance;
-                    vp = feed.WorldToViewportPoint(projectPoint);
-                    projected = vp.z > 0.05f
-                        && !float.IsNaN(vp.x) && !float.IsNaN(vp.y)
-                        && !float.IsInfinity(vp.x) && !float.IsInfinity(vp.y);
-                }
+                // Looking camera (incl. RMB free-look offset) — marker stays with MC main reticle.
+                Vector3 projectPoint = feed.transform.position + aimDir * ProjectDistance;
+                Vector3 vp = feed.WorldToViewportPoint(projectPoint);
+                bool projected = vp.z > 0.05f
+                    && !float.IsNaN(vp.x) && !float.IsNaN(vp.y)
+                    && !float.IsInfinity(vp.x) && !float.IsInfinity(vp.y);
 
                 if (projected)
                 {

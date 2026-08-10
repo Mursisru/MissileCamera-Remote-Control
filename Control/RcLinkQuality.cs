@@ -1,3 +1,4 @@
+using MissileCameraRemoteControl.Access;
 using MissileCameraRemoteControl.Config;
 using UnityEngine;
 
@@ -48,6 +49,8 @@ namespace MissileCameraRemoteControl.Control
                 _nextEval = 0f;
                 RcMissileTag? tag = missile.GetComponent<RcMissileTag>();
                 _satcomCached = tag != null && tag.Guidance == RcGuidanceKind.Satcom;
+                // AllowAny third-party munitions have no RC tag — treat as Full while ownship-in-mesh path below;
+                // also skip SATCOM false-negatives that stuck Degraded/Lost with no mesh identity.
             }
 
             if (Time.unscaledTime < _nextEval)
@@ -58,6 +61,18 @@ namespace MissileCameraRemoteControl.Control
             {
                 _jamSeconds = 0f;
                 _level = RcLinkLevel.Full;
+                return _level;
+            }
+
+            // AllowAny: no official DL/SATCOM mesh identity — do not soft-brick stick on Lost.
+            if (RcConfig.AllowAnyMunition.Value
+                && missile.GetComponent<RcMissileTag>() == null
+                && !MissileAccess.IsRcMissile(missile))
+            {
+                _jamSeconds = 0f;
+                _level = TryOwnshipInMesh(missile, Mathf.Max(1000f, RcConfig.MeshRangeM.Value))
+                    ? RcLinkLevel.Full
+                    : RcLinkLevel.Degraded;
                 return _level;
             }
 

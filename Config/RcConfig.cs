@@ -40,6 +40,7 @@ namespace MissileCameraRemoteControl.Config
         internal static ConfigEntry<KeyboardShortcut> AimPitchUp { get; private set; } = null!;
         internal static ConfigEntry<KeyboardShortcut> AimPitchDown { get; private set; } = null!;
         internal static ConfigEntry<KeyboardShortcut> FormationFollow { get; private set; } = null!;
+        internal static ConfigEntry<KeyboardShortcut> ManualDetonate { get; private set; } = null!;
         internal static ConfigEntry<bool> AutoFormationFollow { get; private set; } = null!;
 
         internal static void Bind(ConfigFile config)
@@ -100,6 +101,8 @@ namespace MissileCameraRemoteControl.Config
                 "Hold afterburner / turbo-boost.");
             FormationFollow = config.Bind("Keybinds", "FormationFollow", new KeyboardShortcut(KeyCode.P),
                 "Toggle formation: other allied RC missiles follow the controlled lead.");
+            ManualDetonate = config.Bind("Keybinds", "ManualDetonate", new KeyboardShortcut(KeyCode.Space),
+                "While FS+RC: instant vanilla Detonate (Space eaten so the game never sees it). Nuclear: near surface only.");
             AutoFormationFollow = config.Bind("Control", "AutoFormationFollow", false,
                 "If true, engage formation follow automatically when taking RC (P still toggles).");
 

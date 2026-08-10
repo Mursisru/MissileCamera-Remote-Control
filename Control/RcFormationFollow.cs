@@ -9,21 +9,25 @@ using UnityEngine;
 namespace MissileCameraRemoteControl.Control
 {
     /// <summary>
-    /// Formation follow (P): lead = controlled RC missile.
-    /// Wingmen share the lead's real aimpoint + lock (not a phantom point 4 km ahead).
-    /// Detonation: vanilla DetectCollisions impact / TakeDamage only — no soft prox burst.
+    /// Formation FOLLOW (P):
+    /// Smooth lead-heading copy + soft trail bias + terminal blend to shared impact.
+    /// Far aimpoint + ω-limited slew (no near-rabbit chase / weave).
     /// </summary>
     internal static class RcFormationFollow
     {
-        private const float MinAheadM = 50f;
-        private const float MinBehindM = 40f;
+        private const float MinSpacingM = 45f;
         private const float MinAimDistM = 800f;
-        private const float CatchUpLagM = 40f;
-        private const float CatchUpGain = 0.45f;
-        private const float CatchUpMinAheadM = 80f;
-        private const float CatchUpMaxAheadM = 400f;
-        private const float CatchUpBlendSpanM = 350f;
-        private const float MaxCatchFoldRad = 70f * Mathf.Deg2Rad;
+        private const float AimWriteDistM = 2800f;
+        private const float TerminalStartM = 2800f;
+        private const float TerminalFullM = 450f;
+        private const float CatchUpExtraLagM = 350f;
+        private const float MaxTrailLeaveM = 1100f;
+        private const float FollowerOmegaScale = 0.42f;
+        private const float LeadDirSmoothTau = 0.25f;
+        private const float MaxRouteBiasDeg = 8f;
+
+        /// <summary>Within this range of last lead impact → hold that point; farther → own seeker.</summary>
+        private const float TerminalHandoffM = 2800f;
 
         private static readonly FieldInfo? SeekerTargetField =
             typeof(MissileSeeker).GetField("targetUnit", BindingFlags.Instance | BindingFlags.NonPublic | BindingFlags.Public);
@@ -31,18 +35,26 @@ namespace MissileCameraRemoteControl.Control
         private struct FollowerState
         {
             internal Missile Missile;
-            internal float AlongSpacing;
-            internal bool IsAhead;
+            internal float TrailBackM;
+            internal bool WasAheadAtEngage;
             internal bool FinsDone;
             internal bool TangibleDone;
             internal bool ArmDone;
+            internal Vector3 CmdDir;
+            internal bool CmdInit;
         }
 
         private static Missile? _lead;
         private static bool _active;
+        private static Unit? _sharedTarget;
+        private static Vector3 _lastImpactLocal;
+        private static bool _hasLastImpact;
+        private static bool _leadInTerminal;
+        private static Vector3 _smoothLeadDir = Vector3.forward;
+        private static bool _smoothLeadDirInit;
+        private static readonly RcFormationTrail _trail = new RcFormationTrail();
         private static readonly List<FollowerState> _followers = new List<FollowerState>(16);
         private static readonly HashSet<int> _followerIds = new HashSet<int>(16);
-        private static readonly Dictionary<int, int> _idToIndex = new Dictionary<int, int>(16);
 
         internal static bool IsActive => _active && _lead != null && !_lead.disabled;
 
@@ -73,13 +85,78 @@ namespace MissileCameraRemoteControl.Control
         {
             _active = false;
             _lead = null;
+            _sharedTarget = null;
+            _hasLastImpact = false;
+            _lastImpactLocal = Vector3.zero;
+            _leadInTerminal = false;
+            _smoothLeadDirInit = false;
+            _trail.Clear();
             _followers.Clear();
             _followerIds.Clear();
-            _idToIndex.Clear();
             if (RemoteControlSession.Controlled != null)
                 RcSeekSkipSet.Rebuild();
             else
                 RcSeekSkipSet.Clear();
+        }
+
+        /// <summary>
+        /// Lead lost / FOLLOW off:
+        /// near last impact (terminal) → keep flying to that point;
+        /// far → own GSN toward last shared lock.
+        /// </summary>
+        internal static void HandoffAndClear()
+        {
+            if (!_active)
+            {
+                Clear();
+                return;
+            }
+
+            Unit? target = _sharedTarget;
+            if (target != null && target.disabled)
+                target = null;
+
+            Vector3 impact = _hasLastImpact ? _lastImpactLocal : ResolveSharedImpact();
+            bool haveImpact = impact.sqrMagnitude > 1f;
+            bool leadTerminal = _leadInTerminal;
+
+            int toImpact = 0;
+            int toSeek = 0;
+
+            for (int i = 0; i < _followers.Count; i++)
+            {
+                Missile? m = _followers[i].Missile;
+                if (m == null || m.disabled)
+                    continue;
+                try
+                {
+                    float dist = haveImpact
+                        ? Vector3.Distance(m.transform.position, impact)
+                        : float.MaxValue;
+
+                    // Lead already terminal → whole salvo holds impact; else per-missile range.
+                    bool terminal = haveImpact && (leadTerminal || dist <= TerminalHandoffM);
+                    if (terminal)
+                    {
+                        RcSeekerHandoff.CommitToImpactPoint(m, impact, target);
+                        toImpact++;
+                    }
+                    else
+                    {
+                        SyncLock(m, target);
+                        RcSeekerHandoff.CommitForAutonomous(m);
+                        toSeek++;
+                    }
+                }
+                catch
+                {
+                    // ignore
+                }
+            }
+
+            RcPlugin.ModLogger?.LogInfo(
+                $"Formation handoff — impactHold={toImpact}, seeker={toSeek}, leadTerminal={leadTerminal}");
+            Clear();
         }
 
         internal static void ToggleFromControlled()
@@ -93,8 +170,8 @@ namespace MissileCameraRemoteControl.Control
             Missile lead = RemoteControlSession.Controlled;
             if (_active && ReferenceEquals(_lead, lead))
             {
-                Clear();
-                RcPlugin.ModLogger?.LogInfo("Formation follow OFF.");
+                HandoffAndClear();
+                RcPlugin.ModLogger?.LogInfo("Formation follow OFF (wingmen keep last lock).");
                 return;
             }
 
@@ -116,19 +193,16 @@ namespace MissileCameraRemoteControl.Control
 
             RemoteControlSession.RefreshPool();
             IReadOnlyList<Missile> pool = RemoteControlSession.Pool;
-            Transform leadTf = lead.transform;
-            Vector3 leadPos = leadTf.position;
-            Vector3 alongAxis = ResolveLeadAimDir();
-            if (alongAxis.sqrMagnitude < 1e-6f)
-                alongAxis = leadTf.forward;
-            alongAxis.Normalize();
+            Vector3 leadPos = lead.transform.position;
+            Vector3 axis = ResolveLeadDir(lead);
 
             _lead = lead;
             _active = true;
+            _sharedTarget = MissileAccess.TryGetLockedTarget(lead);
+            _trail.Clear();
+            _trail.PushLead(leadPos);
 
-            int aheadN = 0;
-            int behindN = 0;
-
+            int n = 0;
             for (int i = 0; i < pool.Count; i++)
             {
                 Missile m = pool[i];
@@ -140,34 +214,31 @@ namespace MissileCameraRemoteControl.Control
                     continue;
 
                 Vector3 delta = m.transform.position - leadPos;
-                float along = Vector3.Dot(delta, alongAxis);
+                float along = Vector3.Dot(delta, axis);
                 bool ahead = along > 0f;
-                float spacing = Mathf.Abs(along);
-                if (ahead)
-                    spacing = Mathf.Max(spacing, MinAheadM);
-                else
-                    spacing = Mathf.Max(spacing, MinBehindM);
+                float back = Mathf.Max(MinSpacingM, Mathf.Abs(along));
 
-                int id = m.GetInstanceID();
-                _idToIndex[id] = _followers.Count;
-                _followerIds.Add(id);
+                _followerIds.Add(m.GetInstanceID());
+                Vector3 initDir = m.transform.forward.sqrMagnitude > 1e-6f
+                    ? m.transform.forward.normalized
+                    : axis;
                 _followers.Add(new FollowerState
                 {
                     Missile = m,
-                    AlongSpacing = spacing,
-                    IsAhead = ahead,
+                    TrailBackM = back,
+                    WasAheadAtEngage = ahead,
                     FinsDone = false,
                     TangibleDone = false,
-                    ArmDone = false
+                    ArmDone = false,
+                    CmdDir = initDir,
+                    CmdInit = true
                 });
-
-                if (ahead) aheadN++;
-                else behindN++;
+                n++;
             }
 
             RcSeekSkipSet.Rebuild();
             RcPlugin.ModLogger?.LogInfo(
-                $"Formation follow ON — lead={lead.unitName ?? lead.name}, ahead={aheadN}, behind={behindN}");
+                $"Formation follow ON — lead={lead.unitName ?? lead.name}, wingmen={n} (trail route + shared impact).");
         }
 
         internal static void Tick()
@@ -178,17 +249,23 @@ namespace MissileCameraRemoteControl.Control
             if (_lead == null || _lead.disabled || !AuthorityGate.CanControl(_lead)
                 || !RemoteControlSession.OwnsMissile(_lead))
             {
-                Clear();
+                HandoffAndClear();
                 return;
             }
 
-            PruneDeadFollowers();
+            _trail.PushLead(_lead.transform.position);
+            CacheLastImpact();
+            PruneDead();
 
             Unit? leadTarget = MissileAccess.TryGetLockedTarget(_lead);
-            float leadThrottle = 1f;
+            if (leadTarget != null && !leadTarget.disabled)
+                _sharedTarget = leadTarget;
+            else if (_sharedTarget != null && _sharedTarget.disabled)
+                _sharedTarget = null;
+
             bool leadBoost = ThrottleController.BoostActive;
 
-            for (int i = 0; i < _followers.Count; i++)
+            for (int i = _followers.Count - 1; i >= 0; i--)
             {
                 FollowerState f = _followers[i];
                 Missile m = f.Missile;
@@ -197,16 +274,22 @@ namespace MissileCameraRemoteControl.Control
 
                 try
                 {
-                    EnsureFollowerWarhead(ref f);
+                    if (ShouldSolo(m))
+                    {
+                        ReleaseSolo(m, i);
+                        continue;
+                    }
+
+                    EnsureWarhead(ref f);
                     _followers[i] = f;
 
-                    SyncFollowerLock(m, leadTarget);
+                    SyncLock(m, _sharedTarget);
+                    RcSeekerHandoff.PrepareSeekerState(m);
 
-                    try { m.SetThrottle(leadThrottle); }
+                    try { m.SetThrottle(1f); }
                     catch { /* ignore */ }
 
-                    bool wingBoost = leadBoost && MissileAccess.HasMotorFuel(m);
-                    AfterburnerVfxBinder.SetBoost(m, wingBoost);
+                    AfterburnerVfxBinder.SetBoost(m, leadBoost && MissileAccess.HasMotorFuel(m));
                     RcSeekerSuppress.Tick(m);
                 }
                 catch
@@ -217,9 +300,8 @@ namespace MissileCameraRemoteControl.Control
         }
 
         /// <summary>
-        /// Shared impact with lead. If behind on the aim ray, pursue a point on lead→impact
-        /// (cut inside / catch up) — same stick alone left wingmen shallow and late.
-        /// Never replace impact with me+4km (that peeled them off behind the lead).
+        /// Smooth heading copy of lead + soft route bias + terminal blend to shared impact.
+        /// Far aimpoint + ω-limited slew — no near-rabbit chase (that caused weave).
         /// </summary>
         internal static void ReinforceAimpoint(Missile missile)
         {
@@ -228,52 +310,57 @@ namespace MissileCameraRemoteControl.Control
 
             try
             {
-                Vector3 impact = ResolveSharedAimLocal();
-                if (impact.sqrMagnitude < 1f)
-                    return;
-
-                Vector3 leadPos = _lead.transform.position;
-                Vector3 me = missile.transform.position;
-                Vector3 leadToImpact = impact - leadPos;
-                float leadRange = leadToImpact.magnitude;
-                Vector3 dir = leadRange > 1f
-                    ? leadToImpact / leadRange
-                    : ResolveLeadAimDir();
-
-                float myRange = (impact - me).magnitude;
-                // Behind = farther from impact than the lead (along-track lag).
-                float lag = myRange - leadRange;
-
-                Vector3 aim = impact;
-                if (lag > CatchUpLagM && leadRange > 50f)
+                int idx = -1;
+                for (int i = 0; i < _followers.Count; i++)
                 {
-                    // Point on lead→impact ahead of lead — steeper dive onto the lead track.
-                    float ahead = Mathf.Clamp(lag * CatchUpGain, CatchUpMinAheadM, CatchUpMaxAheadM);
-                    ahead = Mathf.Min(ahead, leadRange * 0.85f);
-                    Vector3 pursuit = leadPos + dir * ahead;
-                    float blend = Mathf.Clamp01((lag - CatchUpLagM) / CatchUpBlendSpanM);
-                    blend = Mathf.Min(blend, 0.8f);
-                    aim = Vector3.Lerp(impact, pursuit, blend);
+                    if (!ReferenceEquals(_followers[i].Missile, missile))
+                        continue;
+                    idx = i;
+                    break;
                 }
 
-                Vector3 toAim = aim - me;
-                if (toAim.sqrMagnitude < 1f)
+                if (idx < 0)
                     return;
+
+                FollowerState f = _followers[idx];
+                Vector3 me = missile.transform.position;
+                Vector3 leadPos = _lead.transform.position;
+                Vector3 impact = ResolveSharedImpact();
+                Vector3 leadDir = SmoothLeadDir(ResolveLeadDir(_lead));
+
+                Vector3 desiredDir = ResolveDesiredDir(me, leadPos, leadDir, impact, f);
+
+                float dt = Mathf.Max(Time.fixedDeltaTime, 1f / 120f);
+                float omega = MissileAccess.GetMaxTurnRateRad(missile) * FollowerOmegaScale;
+                float maxRad = Mathf.Max(omega * dt, 1e-5f);
+
+                Vector3 cmd = f.CmdInit && f.CmdDir.sqrMagnitude > 1e-8f
+                    ? f.CmdDir.normalized
+                    : (missile.transform.forward.sqrMagnitude > 1e-6f
+                        ? missile.transform.forward.normalized
+                        : leadDir);
+
+                // Always RotateTowards — never snap (snap + jitter = weave).
+                Vector3 next = Vector3.RotateTowards(cmd, desiredDir, maxRad, 0f).normalized;
 
                 Vector3 nose = missile.transform.forward;
-                if (nose.sqrMagnitude > 1e-6f && Vector3.Dot(toAim, nose) < 0.02f)
-                {
-                    // Fold toward impact inside forward cone — do NOT invent a far phantom aim.
-                    Vector3 folded = Vector3.RotateTowards(
-                        nose.normalized,
-                        toAim.normalized,
-                        MaxCatchFoldRad,
-                        0f);
-                    aim = me + folded * Mathf.Max(toAim.magnitude, 250f);
-                }
+                if (nose.sqrMagnitude > 1e-6f && Vector3.Dot(next, nose) < 0.05f)
+                    next = nose.normalized;
 
-                Vector3 leadVel = ResolveLeadVel();
-                missile.SetAimpoint(aim.ToGlobalPosition(), leadVel);
+                f.CmdDir = next;
+                f.CmdInit = true;
+                _followers[idx] = f;
+
+                Vector3 aim = me + next * AimWriteDistM;
+                Vector3 vel = Vector3.zero;
+                try
+                {
+                    if (_lead.rb != null)
+                        vel = _lead.rb.velocity;
+                }
+                catch { /* ignore */ }
+
+                missile.SetAimpoint(aim.ToGlobalPosition(), vel);
             }
             catch
             {
@@ -281,36 +368,169 @@ namespace MissileCameraRemoteControl.Control
             }
         }
 
-        /// <summary>
-        /// Prefer lead's last WriteAimpoint (terrain-resolved). Never invent leadPos+4km —
-        /// that made wingmen fly past the real impact and never collide.
-        /// </summary>
-        private static Vector3 ResolveSharedAimLocal()
+        private static Vector3 SmoothLeadDir(Vector3 raw)
         {
-            if (MouseGuidanceController.TryGetLastAimLocal(out Vector3 cached))
+            if (raw.sqrMagnitude < 1e-8f)
+                return _smoothLeadDirInit ? _smoothLeadDir : Vector3.forward;
+            raw.Normalize();
+            if (!_smoothLeadDirInit)
+            {
+                _smoothLeadDir = raw;
+                _smoothLeadDirInit = true;
+                return raw;
+            }
+
+            float dt = Mathf.Max(Time.fixedDeltaTime, 1f / 120f);
+            float a = 1f - Mathf.Exp(-dt / LeadDirSmoothTau);
+            _smoothLeadDir = Vector3.Slerp(_smoothLeadDir, raw, a).normalized;
+            return _smoothLeadDir;
+        }
+
+        private static Vector3 ResolveDesiredDir(
+            Vector3 me,
+            Vector3 leadPos,
+            Vector3 leadDir,
+            Vector3 impact,
+            FollowerState f)
+        {
+            // 1) Base = fly like the lead (stable parallel course).
+            Vector3 dir = leadDir;
+
+            // 2) Soft route hint from trail tangent (far look — not chase nearby rabbit).
+            if (!f.WasAheadAtEngage
+                && _trail.TryGetBehind(f.TrailBackM, out _, out Vector3 tan)
+                && tan.sqrMagnitude > 1e-6f)
+            {
+                float ang = Vector3.Angle(dir, tan);
+                if (ang > 0.5f)
+                {
+                    float bias = Mathf.Min(ang, MaxRouteBiasDeg) * Mathf.Deg2Rad;
+                    dir = Vector3.RotateTowards(dir, tan.normalized, bias, 0f);
+                }
+            }
+
+            // 3) Softly face shared impact (terminal + catch-up) — also capped.
+            if (impact.sqrMagnitude > 1f)
+            {
+                Vector3 toImp = impact - me;
+                if (toImp.sqrMagnitude > 1f)
+                {
+                    float distImp = toImp.magnitude;
+                    float terminalT = TerminalBlend(distImp);
+                    float leadDistImp = Vector3.Distance(leadPos, impact);
+                    if (distImp > leadDistImp + CatchUpExtraLagM)
+                        terminalT = Mathf.Max(terminalT, 0.25f);
+
+                    if (terminalT > 0.02f)
+                    {
+                        Vector3 impDir = toImp.normalized;
+                        float maxBias = Mathf.Lerp(MaxRouteBiasDeg, 25f, terminalT);
+                        float ang = Vector3.Angle(dir, impDir);
+                        float step = Mathf.Min(ang, maxBias) * Mathf.Deg2Rad * Mathf.Clamp01(terminalT + 0.15f);
+                        dir = Vector3.RotateTowards(dir, impDir, step, 0f);
+                    }
+                }
+            }
+
+            return dir.sqrMagnitude > 1e-8f ? dir.normalized : leadDir;
+        }
+
+        private static float TerminalBlend(float distToImpact)
+        {
+            if (distToImpact <= TerminalFullM)
+                return 1f;
+            if (distToImpact >= TerminalStartM)
+                return 0f;
+            return 1f - Mathf.InverseLerp(TerminalFullM, TerminalStartM, distToImpact);
+        }
+
+        private static void CacheLastImpact()
+        {
+            Vector3 impact = ResolveSharedImpact();
+            if (impact.sqrMagnitude < 1f)
+                return;
+            _lastImpactLocal = impact;
+            _hasLastImpact = true;
+
+            if (_lead == null)
+                return;
+            try
+            {
+                if (!_lead.disabled)
+                    _leadInTerminal = Vector3.Distance(_lead.transform.position, impact) <= TerminalHandoffM;
+            }
+            catch
+            {
+                // keep previous _leadInTerminal
+            }
+        }
+
+        private static Vector3 ResolveSharedImpact()
+        {
+            if (MouseGuidanceController.TryGetLastAimLocal(out Vector3 cached) && cached.sqrMagnitude > 1f)
                 return cached;
 
-            if (_lead != null && MissileAccess.TryGetAimLocal(_lead, out Vector3 fromLead))
+            if (_lead != null && MissileAccess.TryGetAimLocal(_lead, out Vector3 fromLead) && fromLead.sqrMagnitude > 1f)
                 return fromLead;
 
             if (_lead == null)
                 return Vector3.zero;
 
-            Vector3 dir = ResolveLeadAimDir();
+            Vector3 dir = ResolveLeadDir(_lead);
             float dist = Mathf.Max(MinAimDistM, RcConfig.AimDistance.Value);
             return RcBallisticImpactSafety.ResolveAimPoint(_lead.transform.position, dir, dist);
         }
 
-        private static void SyncFollowerLock(Missile follower, Unit? leadTarget)
+        private static Vector3 ResolveLeadDir(Missile lead)
         {
+            Vector3 cmd = MouseGuidanceController.WorldAimDir;
+            if (cmd.sqrMagnitude > 1e-6f)
+                return cmd.normalized;
+
             try
             {
-                follower.SetTarget(leadTarget);
+                if (lead.rb != null && lead.rb.velocity.sqrMagnitude > 25f)
+                    return lead.rb.velocity.normalized;
             }
-            catch
+            catch { /* ignore */ }
+
+            Vector3 fwd = lead.transform.forward;
+            return fwd.sqrMagnitude > 1e-6f ? fwd.normalized : Vector3.forward;
+        }
+
+        private static bool ShouldSolo(Missile m)
+        {
+            if (_trail.Count < 2)
+                return false;
+            return _trail.NearestDistance(m.transform.position) > MaxTrailLeaveM;
+        }
+
+        private static void ReleaseSolo(Missile m, int index)
+        {
+            Unit? target = _sharedTarget;
+            if (target != null && target.disabled)
+                target = null;
+
+            try
             {
-                // ignore
+                SyncLock(m, target);
+                RcSeekerHandoff.CommitForAutonomous(m);
+                AfterburnerVfxBinder.SetBoost(m, false);
             }
+            catch { /* ignore */ }
+
+            if (index >= 0 && index < _followers.Count)
+                _followers.RemoveAt(index);
+            RebuildIds();
+            RcSeekSkipSet.Rebuild();
+            RcPlugin.ModLogger?.LogInfo(
+                $"Formation solo → {m.unitName ?? m.name} (left lead trail, seeking shared target).");
+        }
+
+        private static void SyncLock(Missile follower, Unit? target)
+        {
+            try { follower.SetTarget(target); }
+            catch { /* ignore */ }
 
             if (SeekerTargetField == null)
                 return;
@@ -318,46 +538,12 @@ namespace MissileCameraRemoteControl.Control
             {
                 MissileSeeker? seeker = MissileAccess.GetSeeker(follower) ?? follower.GetComponent<MissileSeeker>();
                 if (seeker != null)
-                    SeekerTargetField.SetValue(seeker, leadTarget);
+                    SeekerTargetField.SetValue(seeker, target);
             }
-            catch
-            {
-                // ignore
-            }
+            catch { /* ignore */ }
         }
 
-        private static Vector3 ResolveLeadAimDir()
-        {
-            Vector3 dir = MouseGuidanceController.WorldAimDir;
-            if (dir.sqrMagnitude > 1e-6f)
-                return dir.normalized;
-
-            if (_lead != null)
-            {
-                Vector3 fwd = _lead.transform.forward;
-                if (fwd.sqrMagnitude > 1e-6f)
-                    return fwd.normalized;
-            }
-
-            return Vector3.forward;
-        }
-
-        private static Vector3 ResolveLeadVel()
-        {
-            try
-            {
-                if (_lead != null && _lead.rb != null)
-                    return _lead.rb.velocity;
-            }
-            catch
-            {
-                // ignore
-            }
-
-            return Vector3.zero;
-        }
-
-        private static void EnsureFollowerWarhead(ref FollowerState f)
+        private static void EnsureWarhead(ref FollowerState f)
         {
             Missile m = f.Missile;
             if (m == null)
@@ -371,11 +557,7 @@ namespace MissileCameraRemoteControl.Control
 
             if (!f.FinsDone && age > 0.5f)
             {
-                try
-                {
-                    m.DeployFins();
-                    f.FinsDone = true;
-                }
+                try { m.DeployFins(); f.FinsDone = true; }
                 catch { /* retry */ }
             }
 
@@ -414,7 +596,7 @@ namespace MissileCameraRemoteControl.Control
             }
         }
 
-        private static void PruneDeadFollowers()
+        private static void PruneDead()
         {
             bool changed = false;
             for (int i = _followers.Count - 1; i >= 0; i--)
@@ -429,20 +611,19 @@ namespace MissileCameraRemoteControl.Control
 
             if (!changed)
                 return;
+            RebuildIds();
+            RcSeekSkipSet.Rebuild();
+        }
 
+        private static void RebuildIds()
+        {
             _followerIds.Clear();
-            _idToIndex.Clear();
             for (int i = 0; i < _followers.Count; i++)
             {
                 Missile? m = _followers[i].Missile;
-                if (m == null)
-                    continue;
-                int id = m.GetInstanceID();
-                _followerIds.Add(id);
-                _idToIndex[id] = i;
+                if (m != null)
+                    _followerIds.Add(m.GetInstanceID());
             }
-
-            RcSeekSkipSet.Rebuild();
         }
     }
 }
