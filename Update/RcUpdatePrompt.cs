@@ -4,15 +4,10 @@ using UnityEngine;
 namespace MissileCameraRemoteControl.Update
 {
     /// <summary>
-    /// One-shot EN update prompt. Shown after GitHub latest &gt; AppVersion; silent when offline.
-    /// Delayed vs MissileCamera prompt so both can appear without overlapping the same window.
+    /// One-shot EN update prompt. Shown as soon as GitHub latest &gt; AppVersion; silent when offline.
     /// </summary>
     internal sealed class RcUpdatePrompt : MonoBehaviour
     {
-        /// <summary>MC shows at ~2.5s — wait longer + extra if MC is also outdated.</summary>
-        private const float MinSecondsBase = 6.5f;
-        private const float ExtraIfMcOutdated = 3.5f;
-
         private static bool _offeredThisSession;
         private static RcUpdatePrompt? _instance;
 
@@ -43,22 +38,11 @@ namespace MissileCameraRemoteControl.Update
                 || RcConfig.UpdatePromptDontShowAgain.Value)
                 return;
 
-            float need = MinSecondsBase;
-            if (McUpdateStatusPeek.TryGet(out bool mcDone, out bool mcOutdated, out _, out _)
-                && mcDone
-                && mcOutdated)
-            {
-                need += ExtraIfMcOutdated;
-            }
-
-            if (Time.unscaledTime < need)
-                return;
-
             _offeredThisSession = true;
             _visible = true;
             _dontShowAgain = false;
             _window.x = (Screen.width - _window.width) * 0.5f;
-            // Below typical MC prompt so both can be read if stacked.
+            // Stack below typical MC prompt if both appear at once.
             _window.y = (Screen.height - _window.height) * 0.52f;
         }
 

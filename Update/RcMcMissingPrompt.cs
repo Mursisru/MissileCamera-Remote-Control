@@ -26,7 +26,6 @@ namespace MissileCameraRemoteControl.Update
     internal sealed class RcMcMissingPrompt : MonoBehaviour
     {
         private const string McReleasesUrl = "https://github.com/Mursisru/MissileCamera/releases/latest";
-        private const float MinSecondsInGame = 1.5f;
 
         private static bool _offeredThisSession;
         private static RcMcMissingPrompt? _instance;
@@ -61,8 +60,6 @@ namespace MissileCameraRemoteControl.Update
         private void Update()
         {
             if (_offeredThisSession || _visible)
-                return;
-            if (Time.unscaledTime < MinSecondsInGame)
                 return;
 
             // MC appeared mid-session (rare) — nothing to show.
