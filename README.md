@@ -2,7 +2,7 @@
 
 [![Nuclear Option](https://img.shields.io/badge/Game-Nuclear%20Option-blue)](https://store.steampowered.com/app/2168680/Nuclear_Option/)
 [![BepInEx 5](https://img.shields.io/badge/Loader-BepInEx%205-orange)](https://docs.bepinex.dev/)
-[![Version](https://img.shields.io/badge/Version-1.9.9-green)](https://github.com/Mursisru/MissileCamera-Remote-Control/releases/tag/1.9.9)
+[![Version](https://img.shields.io/badge/Version-2.0.0-green)](https://github.com/Mursisru/MissileCamera-Remote-Control/releases/tag/2.0.0)
 [![Requires MissileCamera](https://img.shields.io/badge/Requires-MissileCamera-lightgrey)](https://github.com/Mursisru/MissileCamera)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
@@ -12,7 +12,7 @@ BepInEx 5 addon for **Nuclear Option**. Extends [MissileCamera](https://github.c
 **Soft dependency:** `com.at747.missilecamera.bepinex` (MissileCamera). If missing, RC offers an install prompt and stays off until MC is present.
 
 > [!NOTE]
-> Current pre-release is **1.9.9** on [`dev`](https://github.com/Mursisru/MissileCamera-Remote-Control/tree/dev). Stable public baseline remains [1.0.0](https://github.com/Mursisru/MissileCamera-Remote-Control/releases/tag/1.0.0).
+> Current release is **2.0.0** ([`main`](https://github.com/Mursisru/MissileCamera-Remote-Control/tree/main) / [`v2.0.0`](https://github.com/Mursisru/MissileCamera-Remote-Control/tree/v2.0.0)). Ongoing work continues on [`dev`](https://github.com/Mursisru/MissileCamera-Remote-Control/tree/dev).
 
 ---
 
@@ -72,7 +72,7 @@ BepInEx 5 addon for **Nuclear Option**. Extends [MissileCamera](https://github.c
 ## Install
 
 1. Install **BepInEx 5** and **[MissileCamera](https://github.com/Mursisru/MissileCamera)**.
-2. Download `Mursisru_MissileCameraRemoteControl_v1.9.9.zip` from [Releases](https://github.com/Mursisru/MissileCamera-Remote-Control/releases) (pre-release **1.9.9**, or stable **1.0.0**).
+2. Download `MissileCameraRC-2-0-0.zip` from [Releases](https://github.com/Mursisru/MissileCamera-Remote-Control/releases) (**2.0.0**).
 3. Extract `MissileCameraRemoteControl.dll` into:
 
 ```text
@@ -154,16 +154,17 @@ Point game / reference paths via a local `Directory.Build.props` (not committed)
 
 See [CHANGELOG.md](CHANGELOG.md).
 
-### 1.9.9 highlights (since 1.0.0)
+### 2.0.0 highlights (since 1.0.0)
 
-- Formation follow (`P`) + optional auto-engage; parallel ahead/behind slots
-- GitHub update check + soft MC missing install prompt
+- Formation follow (`P`) + optional auto-engage; terminal impact latch
+- Soft MC dependency + GitHub update check prompts
 - Extra whitelist: AGM-68D, AAM-46 Longstrong, 76mm DLG Shell (shared WeaponInfo stacking)
 - Remappable aim schemes (WASD / Arrows / NumPad / Custom)
 - Hot-path Seek skip-set / latches / aim dedupe
 - Ballistic / long-flight terrain safety; impact-fuse & cook-off fixes
 - Aim anti-flip (no random reverse turns); dive ray-resolve
 - Official-clone-only control by default (`AllowAnyMunition` opt-in)
+- Manual detonate (Space) + AAM proximity gates
 
 ---
 
