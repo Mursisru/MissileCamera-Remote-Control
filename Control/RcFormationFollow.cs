@@ -1,4 +1,5 @@
 using System.Collections.Generic;
+using System.Reflection;
 using MissileCameraRemoteControl.Access;
 using MissileCameraRemoteControl.Config;
 using MissileCameraRemoteControl.Network;
@@ -9,20 +10,27 @@ namespace MissileCameraRemoteControl.Control
 {
     /// <summary>
     /// Formation follow (P): lead = controlled RC missile.
-    /// Ahead + behind: fly parallel to reticle dir (on-axis); soft lateral only — never chase a
-    /// marker behind the nose (that caused braking / weird turns).
+    /// Wingmen share the lead's real aimpoint + lock (not a phantom point 4 km ahead).
+    /// Detonation: vanilla DetectCollisions impact / TakeDamage only — no soft prox burst.
     /// </summary>
     internal static class RcFormationFollow
     {
-        private const float LateralGain = 0.65f;
         private const float MinAheadM = 50f;
         private const float MinBehindM = 40f;
         private const float MinAimDistM = 800f;
+        private const float CatchUpLagM = 40f;
+        private const float CatchUpGain = 0.45f;
+        private const float CatchUpMinAheadM = 80f;
+        private const float CatchUpMaxAheadM = 400f;
+        private const float CatchUpBlendSpanM = 350f;
+        private const float MaxCatchFoldRad = 70f * Mathf.Deg2Rad;
+
+        private static readonly FieldInfo? SeekerTargetField =
+            typeof(MissileSeeker).GetField("targetUnit", BindingFlags.Instance | BindingFlags.NonPublic | BindingFlags.Public);
 
         private struct FollowerState
         {
             internal Missile Missile;
-            /// <summary>Along-track spacing from lead (always &gt; 0).</summary>
             internal float AlongSpacing;
             internal bool IsAhead;
             internal bool FinsDone;
@@ -49,7 +57,6 @@ namespace MissileCameraRemoteControl.Control
             return _followerIds.Contains(missile.GetInstanceID());
         }
 
-        /// <summary>Used by RcSeekSkipSet rebuild.</summary>
         internal static void AppendFollowerMissiles(System.Action<Missile> add)
         {
             if (!_active || add == null)
@@ -69,7 +76,6 @@ namespace MissileCameraRemoteControl.Control
             _followers.Clear();
             _followerIds.Clear();
             _idToIndex.Clear();
-            // Don't Rebuild here during Release (Controlled already null) — Session rebuilds on Take.
             if (RemoteControlSession.Controlled != null)
                 RcSeekSkipSet.Rebuild();
             else
@@ -95,7 +101,6 @@ namespace MissileCameraRemoteControl.Control
             Engage(lead);
         }
 
-        /// <summary>Auto-engage from Take when Config.AutoFormationFollow is on.</summary>
         internal static void EngageFromTake(Missile lead)
         {
             if (lead == null || lead.disabled)
@@ -179,6 +184,7 @@ namespace MissileCameraRemoteControl.Control
 
             PruneDeadFollowers();
 
+            Unit? leadTarget = MissileAccess.TryGetLockedTarget(_lead);
             float leadThrottle = 1f;
             bool leadBoost = ThrottleController.BoostActive;
 
@@ -194,7 +200,8 @@ namespace MissileCameraRemoteControl.Control
                     EnsureFollowerWarhead(ref f);
                     _followers[i] = f;
 
-                    // Full throttle — avoid coasting/lag relative to lead.
+                    SyncFollowerLock(m, leadTarget);
+
                     try { m.SetThrottle(leadThrottle); }
                     catch { /* ignore */ }
 
@@ -210,61 +217,108 @@ namespace MissileCameraRemoteControl.Control
         }
 
         /// <summary>
-        /// Parallel to lead aim dir. Ahead/behind slots on the reticle ray; lateral soft only.
+        /// Shared impact with lead. If behind on the aim ray, pursue a point on lead→impact
+        /// (cut inside / catch up) — same stick alone left wingmen shallow and late.
+        /// Never replace impact with me+4km (that peeled them off behind the lead).
         /// </summary>
         internal static void ReinforceAimpoint(Missile missile)
         {
             if (_lead == null || !IsFollower(missile))
                 return;
 
-            if (!_idToIndex.TryGetValue(missile.GetInstanceID(), out int idx)
-                || idx < 0 || idx >= _followers.Count)
-                return;
-
-            FollowerState f = _followers[idx];
             try
             {
-                Vector3 dir = ResolveLeadAimDir();
-                float aimDist = Mathf.Max(MinAimDistM, RcConfig.AimDistance.Value);
+                Vector3 impact = ResolveSharedAimLocal();
+                if (impact.sqrMagnitude < 1f)
+                    return;
+
                 Vector3 leadPos = _lead.transform.position;
                 Vector3 me = missile.transform.position;
+                Vector3 leadToImpact = impact - leadPos;
+                float leadRange = leadToImpact.magnitude;
+                Vector3 dir = leadRange > 1f
+                    ? leadToImpact / leadRange
+                    : ResolveLeadAimDir();
 
-                float spacing = f.IsAhead
-                    ? Mathf.Max(f.AlongSpacing, MinAheadM)
-                    : Mathf.Max(f.AlongSpacing, MinBehindM);
+                float myRange = (impact - me).magnitude;
+                // Behind = farther from impact than the lead (along-track lag).
+                float lag = myRange - leadRange;
 
-                // Desired point on the aim ray (ahead of lead / behind lead).
-                Vector3 slot = f.IsAhead
-                    ? leadPos + dir * spacing
-                    : leadPos - dir * spacing;
+                Vector3 aim = impact;
+                if (lag > CatchUpLagM && leadRange > 50f)
+                {
+                    // Point on lead→impact ahead of lead — steeper dive onto the lead track.
+                    float ahead = Mathf.Clamp(lag * CatchUpGain, CatchUpMinAheadM, CatchUpMaxAheadM);
+                    ahead = Mathf.Min(ahead, leadRange * 0.85f);
+                    Vector3 pursuit = leadPos + dir * ahead;
+                    float blend = Mathf.Clamp01((lag - CatchUpLagM) / CatchUpBlendSpanM);
+                    blend = Mathf.Min(blend, 0.8f);
+                    aim = Vector3.Lerp(impact, pursuit, blend);
+                }
 
-                // Soft lateral only — keep parallel heading so nose never yaws into a chase reverse.
-                Vector3 toSlot = slot - me;
-                Vector3 along = Vector3.Project(toSlot, dir);
-                Vector3 lateral = toSlot - along;
-
-                Vector3 lat = lateral * LateralGain;
-                float maxLat = aimDist * 0.4f;
-                float latSq = lat.sqrMagnitude;
-                if (latSq > maxLat * maxLat && latSq > 1e-6f)
-                    lat *= maxLat / Mathf.Sqrt(latSq);
-
-                Vector3 look = dir * aimDist + lat;
-                if (look.sqrMagnitude < 1f)
-                    look = dir * aimDist;
+                Vector3 toAim = aim - me;
+                if (toAim.sqrMagnitude < 1f)
+                    return;
 
                 Vector3 nose = missile.transform.forward;
-                if (nose.sqrMagnitude > 1e-6f && Vector3.Dot(look, nose) < 0f)
-                    look = dir * aimDist;
+                if (nose.sqrMagnitude > 1e-6f && Vector3.Dot(toAim, nose) < 0.02f)
+                {
+                    // Fold toward impact inside forward cone — do NOT invent a far phantom aim.
+                    Vector3 folded = Vector3.RotateTowards(
+                        nose.normalized,
+                        toAim.normalized,
+                        MaxCatchFoldRad,
+                        0f);
+                    aim = me + folded * Mathf.Max(toAim.magnitude, 250f);
+                }
 
-                Vector3 lookDir = look.normalized;
-                Vector3 aim = RcBallisticImpactSafety.ResolveAimPoint(
-                    me, lookDir, Mathf.Max(look.magnitude, MinAimDistM * 0.5f));
-                Vector3 toAim = aim - me;
-                if (toAim.sqrMagnitude < 1f || Vector3.Dot(toAim, lookDir) < 0f)
-                    aim = me + lookDir * Mathf.Max(aimDist, MinAimDistM);
+                Vector3 leadVel = ResolveLeadVel();
+                missile.SetAimpoint(aim.ToGlobalPosition(), leadVel);
+            }
+            catch
+            {
+                // ignore
+            }
+        }
 
-                missile.SetAimpoint(aim.ToGlobalPosition(), ResolveLeadVel());
+        /// <summary>
+        /// Prefer lead's last WriteAimpoint (terrain-resolved). Never invent leadPos+4km —
+        /// that made wingmen fly past the real impact and never collide.
+        /// </summary>
+        private static Vector3 ResolveSharedAimLocal()
+        {
+            if (MouseGuidanceController.TryGetLastAimLocal(out Vector3 cached))
+                return cached;
+
+            if (_lead != null && MissileAccess.TryGetAimLocal(_lead, out Vector3 fromLead))
+                return fromLead;
+
+            if (_lead == null)
+                return Vector3.zero;
+
+            Vector3 dir = ResolveLeadAimDir();
+            float dist = Mathf.Max(MinAimDistM, RcConfig.AimDistance.Value);
+            return RcBallisticImpactSafety.ResolveAimPoint(_lead.transform.position, dir, dist);
+        }
+
+        private static void SyncFollowerLock(Missile follower, Unit? leadTarget)
+        {
+            try
+            {
+                follower.SetTarget(leadTarget);
+            }
+            catch
+            {
+                // ignore
+            }
+
+            if (SeekerTargetField == null)
+                return;
+            try
+            {
+                MissileSeeker? seeker = MissileAccess.GetSeeker(follower) ?? follower.GetComponent<MissileSeeker>();
+                if (seeker != null)
+                    SeekerTargetField.SetValue(seeker, leadTarget);
             }
             catch
             {

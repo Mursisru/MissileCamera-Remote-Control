@@ -9,6 +9,10 @@ namespace MissileCameraRemoteControl.Config
         internal static ConfigEntry<bool> AiEquipRcClones { get; private set; } = null!;
         /// <summary>When false (default): only official RC clones. When true: any allied LocalSim munition.</summary>
         internal static ConfigEntry<bool> AllowAnyMunition { get; private set; } = null!;
+        internal static ConfigEntry<bool> AamProximityDetonate { get; private set; } = null!;
+        internal static ConfigEntry<float> AamProxHorizM { get; private set; } = null!;
+        internal static ConfigEntry<float> AamProxVertM { get; private set; } = null!;
+        internal static ConfigEntry<float> AamProxMaxRangeM { get; private set; } = null!;
         internal static ConfigEntry<float> MouseSensitivity { get; private set; } = null!;
         internal static ConfigEntry<float> KeyAimSensitivity { get; private set; } = null!;
         internal static ConfigEntry<float> AimDistance { get; private set; } = null!;
@@ -44,6 +48,15 @@ namespace MissileCameraRemoteControl.Config
                 "AI aircraft equip RC (DL/SATCOM) clones instead of vanilla whitelist mounts. Bots do not remote-pilot — Seek runs normally.");
             AllowAnyMunition = config.Bind("General", "AllowAnyMunition", false,
                 "If false (default): only official MissileCamera RC clones can be remote-controlled. If true: any allied LocalSim munition (including other mods).");
+
+            AamProximityDetonate = config.Bind("Control", "AamProximityDetonate", true,
+                "Under RC: auto-detonate AAM-46 (and other AAM when AllowAnyMunition) near locked target (horizontal + vertical miss gates).");
+            AamProxHorizM = config.Bind("Control", "AamProxHorizM", 14f,
+                "Max horizontal-plane miss (meters) from missile to target for AAM proximity burst.");
+            AamProxVertM = config.Bind("Control", "AamProxVertM", 14f,
+                "Max vertical separation (meters) for AAM proximity burst.");
+            AamProxMaxRangeM = config.Bind("Control", "AamProxMaxRangeM", 55f,
+                "Max slant range (meters) to evaluate AAM proximity burst.");
 
             AimInputMode = config.Bind("Control", "AimInputMode", RcAimInputMode.Mouse,
                 "Mouse | WASD | Arrows | NumPadArrows | Custom. Custom uses AimYaw/Pitch binds below.");

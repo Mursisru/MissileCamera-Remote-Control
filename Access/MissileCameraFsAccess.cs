@@ -21,6 +21,7 @@ namespace MissileCameraRemoteControl.Access
         private static PropertyInfo? _fsViewRt;
         private static PropertyInfo? _fsHud;
         private static PropertyInfo? _hudRootProp;
+        private static MethodInfo? _tryBoreViewport;
 
         internal static bool IsFullscreenActive => RcFrameCache.IsFullscreenActive;
 
@@ -29,6 +30,30 @@ namespace MissileCameraRemoteControl.Access
         internal static RectTransform? TryGetFeedViewRect() => RcFrameCache.FeedViewRect;
 
         internal static RectTransform? TryGetHudOverlayRoot() => RcFrameCache.HudOverlayRoot;
+
+        /// <summary>Project world point on bore-aligned feed (ignores RMB look pan).</summary>
+        internal static bool TryWorldToBoreViewport(Camera cam, Vector3 worldPoint, out Vector3 viewport)
+        {
+            viewport = default;
+            EnsureResolved();
+            if (_tryBoreViewport == null || cam == null)
+                return false;
+            try
+            {
+                object[] args = { cam, worldPoint, Vector3.zero };
+                if (_tryBoreViewport.Invoke(null, args) is bool ok && ok)
+                {
+                    viewport = (Vector3)args[2];
+                    return true;
+                }
+            }
+            catch
+            {
+                // ignore
+            }
+
+            return false;
+        }
 
         /// <summary>Missile currently shown in MissileCamera FS feed (not nearest-to-aircraft).</summary>
         internal static Missile? TryGetFollowedMissile()
@@ -210,6 +235,11 @@ namespace MissileCameraRemoteControl.Access
                 Type? host = mc.GetType("MissileCamera.MissileCameraFullscreenFeedHost");
                 _fsViewRt = host?.GetProperty("ViewRt", BindingFlags.Static | BindingFlags.NonPublic | BindingFlags.Public);
                 _fsHud = host?.GetProperty("Hud", BindingFlags.Static | BindingFlags.NonPublic | BindingFlags.Public);
+
+                Type? look = mc.GetType("MissileCamera.MissileCameraFsLookAround");
+                _tryBoreViewport = look?.GetMethod(
+                    "TryWorldToBoreViewport",
+                    BindingFlags.Static | BindingFlags.NonPublic | BindingFlags.Public);
 
                 _resolvedOk = _fsIsActive != null;
                 if (_resolvedOk)

@@ -18,6 +18,15 @@ namespace MissileCameraRemoteControl.Access
         private static readonly FieldInfo? SeekerField =
             typeof(Missile).GetField("seeker", BindingFlags.Instance | BindingFlags.NonPublic);
 
+        private static readonly FieldInfo? SeekerTargetField =
+            typeof(MissileSeeker).GetField("targetUnit", BindingFlags.Instance | BindingFlags.NonPublic | BindingFlags.Public);
+
+        private static readonly FieldInfo? MissileTargetField =
+            typeof(Missile).GetField("target", BindingFlags.Instance | BindingFlags.NonPublic | BindingFlags.Public);
+
+        private static readonly FieldInfo? AimPointField =
+            typeof(Missile).GetField("aimPoint", BindingFlags.Instance | BindingFlags.NonPublic | BindingFlags.Public);
+
         private static readonly FieldInfo? BurnRateField =
             MotorType?.GetField("burnRate", BindingFlags.Instance | BindingFlags.NonPublic);
 
@@ -120,6 +129,108 @@ namespace MissileCameraRemoteControl.Access
             catch
             {
                 return null;
+            }
+        }
+
+        internal static Unit? TryGetLockedTarget(Missile missile)
+        {
+            if (missile == null)
+                return null;
+
+            try
+            {
+                MissileSeeker? seeker = GetSeeker(missile) ?? missile.GetComponent<MissileSeeker>();
+                if (seeker != null && SeekerTargetField != null)
+                {
+                    Unit? u = SeekerTargetField.GetValue(seeker) as Unit;
+                    if (u != null && !u.disabled)
+                        return u;
+                }
+            }
+            catch
+            {
+                // ignore
+            }
+
+            try
+            {
+                if (MissileTargetField != null)
+                {
+                    Unit? u = MissileTargetField.GetValue(missile) as Unit;
+                    if (u != null && !u.disabled)
+                        return u;
+                }
+            }
+            catch
+            {
+                // ignore
+            }
+
+            return null;
+        }
+
+        /// <summary>Read private Missile.aimPoint as local world position.</summary>
+        internal static bool TryGetAimLocal(Missile? missile, out Vector3 local)
+        {
+            local = default;
+            if (missile == null || AimPointField == null)
+                return false;
+            try
+            {
+                object? raw = AimPointField.GetValue(missile);
+                if (raw == null)
+                    return false;
+                GlobalPosition gp = (GlobalPosition)raw;
+                local = gp.ToLocalPosition();
+                return !float.IsNaN(local.x) && local.sqrMagnitude > 1f;
+            }
+            catch
+            {
+                return false;
+            }
+        }
+
+        /// <summary>AAM-46 always; other AAM seekers only when AllowAnyMunition.</summary>
+        internal static bool IsAirToAirMunition(Missile? missile)
+        {
+            if (missile == null || missile.disabled)
+                return false;
+
+            try
+            {
+                WeaponInfo? info = GetMissileInfo(missile);
+                string? name = info != null ? info.weaponName : null;
+                if (!string.IsNullOrEmpty(name))
+                {
+                    string bare = CloneProfile.StripLegacyPrefix(name!);
+                    CloneProfile.SplitWarheadSuffix(bare, out string core, out _);
+                    if (string.Equals(core, CloneProfile.NameAam46Longstrong, System.StringComparison.Ordinal)
+                        || core.IndexOf("AAM-46", System.StringComparison.OrdinalIgnoreCase) >= 0
+                        || core.IndexOf("AAM-36", System.StringComparison.OrdinalIgnoreCase) >= 0)
+                        return true;
+                }
+            }
+            catch
+            {
+                // ignore
+            }
+
+            if (!RcConfig.AllowAnyMunition.Value)
+                return false;
+
+            try
+            {
+                MissileSeeker? seeker = GetSeeker(missile) ?? missile.GetComponent<MissileSeeker>();
+                if (seeker == null)
+                    return false;
+                System.Type t = seeker.GetType();
+                return t == typeof(ARHSeeker)
+                    || t == typeof(IRSeeker)
+                    || t == typeof(SARHSeeker);
+            }
+            catch
+            {
+                return false;
             }
         }
 

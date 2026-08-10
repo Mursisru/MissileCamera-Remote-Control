@@ -267,6 +267,7 @@ namespace MissileCameraRemoteControl.Control
                 return;
             ThrottleController.Reinforce(m);
             RcFormationFollow.Tick();
+            RcAamProximityDetonate.Tick(m);
         }
 
         internal static void RefreshPool()
