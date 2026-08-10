@@ -10,30 +10,27 @@ namespace MissileCameraRemoteControl.Control
 {
     /// <summary>
     /// Formation FOLLOW (P):
-    /// Smooth lead-heading copy + soft trail bias + terminal blend to shared impact.
-    /// Far aimpoint + ω-limited slew (no near-rabbit chase / weave).
+    /// Cruise = copy smoothed lead heading only (no trail lateral hunt → no weave).
+    /// Terminal = latch onto shared impact; SetAimpoint writes the marker itself.
+    /// Trail ring is distance-only (solo if left far behind the path).
     /// </summary>
     internal static class RcFormationFollow
     {
         private const float MinSpacingM = 45f;
         private const float MinAimDistM = 800f;
         private const float AimWriteDistM = 2800f;
-        private const float TerminalStartM = 2800f;
-        private const float TerminalFullM = 450f;
-        private const float CatchUpExtraLagM = 350f;
-        private const float MaxTrailLeaveM = 1100f;
-        private const float FollowerOmegaScale = 0.5f;
-        private const float LeadDirSmoothTau = 0.25f;
-        private const float MaxRouteBiasDeg = 8f;
 
-        /// <summary>Inside this, no lateral trail pull (stability).</summary>
-        private const float TrailDeadzoneM = 18f;
+        /// <summary>Start easing onto impact; latch hard below this.</summary>
+        private const float TerminalStartM = 4500f;
+        private const float TerminalLatchM = 2800f;
+        private const float TerminalFullM = 1200f;
 
-        /// <summary>Max heading bias toward the trail (closes ~50–100 m without weave).</summary>
-        private const float MaxTrailCorrDeg = 14f;
-
-        /// <summary>Extra degrees per meter outside deadzone.</summary>
-        private const float TrailCorrDegPerM = 0.16f;
+        private const float CatchUpExtraLagM = 400f;
+        private const float MaxTrailLeaveM = 1800f;
+        private const float FollowerOmegaScale = 0.55f;
+        private const float TerminalOmegaScale = 1f;
+        private const float LeadDirSmoothTau = 0.35f;
+        private const float CatchUpBiasDeg = 6f;
 
         /// <summary>Within this range of last lead impact → hold that point; farther → own seeker.</summary>
         private const float TerminalHandoffM = 2800f;
@@ -51,6 +48,8 @@ namespace MissileCameraRemoteControl.Control
             internal bool ArmDone;
             internal Vector3 CmdDir;
             internal bool CmdInit;
+            /// <summary>Once true — never return to trail/heading copy; fly the marker.</summary>
+            internal bool ImpactLocked;
         }
 
         private static Missile? _lead;
@@ -240,14 +239,15 @@ namespace MissileCameraRemoteControl.Control
                     TangibleDone = false,
                     ArmDone = false,
                     CmdDir = initDir,
-                    CmdInit = true
+                    CmdInit = true,
+                    ImpactLocked = false
                 });
                 n++;
             }
 
             RcSeekSkipSet.Rebuild();
             RcPlugin.ModLogger?.LogInfo(
-                $"Formation follow ON — lead={lead.unitName ?? lead.name}, wingmen={n} (trail route + shared impact).");
+                $"Formation follow ON — lead={lead.unitName ?? lead.name}, wingmen={n} (heading copy + impact latch).");
         }
 
         internal static void Tick()
@@ -309,8 +309,8 @@ namespace MissileCameraRemoteControl.Control
         }
 
         /// <summary>
-        /// Smooth heading copy of lead + soft route bias + terminal blend to shared impact.
-        /// Far aimpoint + ω-limited slew — no near-rabbit chase (that caused weave).
+        /// Cruise: copy lead heading (optionally tiny catch-up toward lead).
+        /// Terminal latch: LOS to shared impact; aimpoint = marker (not far phantom / trail).
         /// </summary>
         internal static void ReinforceAimpoint(Missile missile)
         {
@@ -337,11 +337,45 @@ namespace MissileCameraRemoteControl.Control
                 Vector3 impact = ResolveSharedImpact();
                 Vector3 leadDir = SmoothLeadDir(ResolveLeadDir(_lead));
 
-                Vector3 desiredDir = ResolveDesiredDir(me, leadPos, leadDir, impact, f);
+                float distImp = impact.sqrMagnitude > 1f ? Vector3.Distance(me, impact) : float.MaxValue;
+                float leadDistImp = impact.sqrMagnitude > 1f
+                    ? Vector3.Distance(leadPos, impact)
+                    : float.MaxValue;
+
+                // Latch early and stay latched — never resume trail/heading after commit.
+                if (!f.ImpactLocked && impact.sqrMagnitude > 1f
+                    && (distImp <= TerminalLatchM || leadDistImp <= TerminalLatchM || _leadInTerminal))
+                {
+                    f.ImpactLocked = true;
+                }
+
+                float terminalT = f.ImpactLocked ? 1f : TerminalBlend(distImp);
+                // Lagging wingmen start committing sooner so they don't miss the marker on the trail.
+                if (!f.ImpactLocked && distImp > leadDistImp + CatchUpExtraLagM)
+                    terminalT = Mathf.Max(terminalT, 0.45f);
 
                 float dt = Mathf.Max(Time.fixedDeltaTime, 1f / 120f);
-                float omega = MissileAccess.GetMaxTurnRateRad(missile) * FollowerOmegaScale;
+                float omegaScale = Mathf.Lerp(FollowerOmegaScale, TerminalOmegaScale, terminalT);
+                float omega = MissileAccess.GetMaxTurnRateRad(missile) * omegaScale;
                 float maxRad = Mathf.Max(omega * dt, 1e-5f);
+
+                Vector3 desiredDir;
+                if (f.ImpactLocked || terminalT >= 0.85f)
+                {
+                    desiredDir = (impact - me).normalized;
+                    f.ImpactLocked = true;
+                }
+                else if (terminalT > 0.01f && impact.sqrMagnitude > 1f)
+                {
+                    // Blend cruise heading → impact LOS (no trail).
+                    Vector3 cruise = ResolveCruiseDesiredDir(me, leadPos, leadDir, leadDistImp, distImp);
+                    Vector3 impDir = (impact - me).normalized;
+                    desiredDir = Vector3.Slerp(cruise, impDir, terminalT).normalized;
+                }
+                else
+                {
+                    desiredDir = ResolveCruiseDesiredDir(me, leadPos, leadDir, leadDistImp, distImp);
+                }
 
                 Vector3 cmd = f.CmdInit && f.CmdDir.sqrMagnitude > 1e-8f
                     ? f.CmdDir.normalized
@@ -349,7 +383,6 @@ namespace MissileCameraRemoteControl.Control
                         ? missile.transform.forward.normalized
                         : leadDir);
 
-                // Always RotateTowards — never snap (snap + jitter = weave).
                 Vector3 next = Vector3.RotateTowards(cmd, desiredDir, maxRad, 0f).normalized;
 
                 Vector3 nose = missile.transform.forward;
@@ -360,7 +393,6 @@ namespace MissileCameraRemoteControl.Control
                 f.CmdInit = true;
                 _followers[idx] = f;
 
-                Vector3 aim = me + next * AimWriteDistM;
                 Vector3 vel = Vector3.zero;
                 try
                 {
@@ -368,6 +400,23 @@ namespace MissileCameraRemoteControl.Control
                         vel = _lead.rb.velocity;
                 }
                 catch { /* ignore */ }
+
+                // Locked / deep terminal: write the marker. Far phantom along cmd was why they rode the trail past it.
+                Vector3 aim;
+                if (f.ImpactLocked || terminalT >= 0.5f)
+                {
+                    aim = impact;
+                }
+                else if (terminalT > 0.01f)
+                {
+                    // Stay on the ray to impact — never beyond the marker.
+                    float along = Mathf.Min(AimWriteDistM, Mathf.Max(distImp, MinAimDistM));
+                    aim = Vector3.Lerp(me + next * AimWriteDistM, me + (impact - me).normalized * along, terminalT);
+                }
+                else
+                {
+                    aim = me + next * AimWriteDistM;
+                }
 
                 missile.SetAimpoint(aim.ToGlobalPosition(), vel);
             }
@@ -395,69 +444,23 @@ namespace MissileCameraRemoteControl.Control
             return _smoothLeadDir;
         }
 
-        private static Vector3 ResolveDesiredDir(
+        /// <summary>Heading copy only — no nearest-trail lateral pull (that was the weave).</summary>
+        private static Vector3 ResolveCruiseDesiredDir(
             Vector3 me,
             Vector3 leadPos,
             Vector3 leadDir,
-            Vector3 impact,
-            FollowerState f)
+            float leadDistImp,
+            float distImp)
         {
-            // 1) Base = fly like the lead (stable parallel course).
             Vector3 dir = leadDir;
+            if (distImp <= leadDistImp + CatchUpExtraLagM)
+                return dir;
 
-            // 2) Pull toward nearest trail point (lateral) — closes 50–100 m offset; deadzone stops weave.
-            if (_trail.TryGetNearest(me, out Vector3 nearest, out Vector3 tan))
-            {
-                Vector3 toTrail = nearest - me;
-                // Prefer correction perpendicular to lead heading (less energy fight).
-                Vector3 lateral = toTrail - leadDir * Vector3.Dot(toTrail, leadDir);
-                float lat = lateral.magnitude;
-
-                if (lat > TrailDeadzoneM && lateral.sqrMagnitude > 1e-6f)
-                {
-                    float corrDeg = Mathf.Min(
-                        MaxTrailCorrDeg,
-                        (lat - TrailDeadzoneM) * TrailCorrDegPerM);
-                    if (corrDeg > 0.2f)
-                        dir = Vector3.RotateTowards(dir, lateral.normalized, corrDeg * Mathf.Deg2Rad, 0f);
-                }
-
-                // Light tangent align (route shape), only if not fighting a big lateral pull.
-                if (lat < 80f && tan.sqrMagnitude > 1e-6f && !f.WasAheadAtEngage)
-                {
-                    float ang = Vector3.Angle(dir, tan);
-                    if (ang > 0.5f)
-                    {
-                        float bias = Mathf.Min(ang, MaxRouteBiasDeg) * Mathf.Deg2Rad;
-                        dir = Vector3.RotateTowards(dir, tan.normalized, bias, 0f);
-                    }
-                }
-            }
-
-            // 3) Softly face shared impact (terminal + catch-up) — also capped.
-            if (impact.sqrMagnitude > 1f)
-            {
-                Vector3 toImp = impact - me;
-                if (toImp.sqrMagnitude > 1f)
-                {
-                    float distImp = toImp.magnitude;
-                    float terminalT = TerminalBlend(distImp);
-                    float leadDistImp = Vector3.Distance(leadPos, impact);
-                    if (distImp > leadDistImp + CatchUpExtraLagM)
-                        terminalT = Mathf.Max(terminalT, 0.25f);
-
-                    if (terminalT > 0.02f)
-                    {
-                        Vector3 impDir = toImp.normalized;
-                        float maxBias = Mathf.Lerp(MaxRouteBiasDeg, 25f, terminalT);
-                        float ang = Vector3.Angle(dir, impDir);
-                        float step = Mathf.Min(ang, maxBias) * Mathf.Deg2Rad * Mathf.Clamp01(terminalT + 0.15f);
-                        dir = Vector3.RotateTowards(dir, impDir, step, 0f);
-                    }
-                }
-            }
-
-            return dir.sqrMagnitude > 1e-8f ? dir.normalized : leadDir;
+            // Soft catch-up toward lead when far behind on the approach — capped, no trail hunt.
+            Vector3 toLead = leadPos - me;
+            if (toLead.sqrMagnitude < 1f)
+                return dir;
+            return Vector3.RotateTowards(dir, toLead.normalized, CatchUpBiasDeg * Mathf.Deg2Rad, 0f);
         }
 
         private static float TerminalBlend(float distToImpact)
@@ -466,7 +469,8 @@ namespace MissileCameraRemoteControl.Control
                 return 1f;
             if (distToImpact >= TerminalStartM)
                 return 0f;
-            return 1f - Mathf.InverseLerp(TerminalFullM, TerminalStartM, distToImpact);
+            float u = 1f - Mathf.InverseLerp(TerminalFullM, TerminalStartM, distToImpact);
+            return u * u * (3f - 2f * u);
         }
 
         private static void CacheLastImpact()
