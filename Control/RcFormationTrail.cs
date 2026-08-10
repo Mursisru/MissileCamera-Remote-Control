@@ -122,9 +122,7 @@ namespace MissileCameraRemoteControl.Control
             for (int i = 1; i < _count; i++)
             {
                 Vector3 b = GetFromNewest(i);
-                // a = newer, b = older; tangent toward lead = a - b direction from older to newer
-                Vector3 ab = a - b; // wait: DistPointToSegment(world, a, b) - segment from newer to older
-                // Closest on segment a(newer)--b(older)
+                // a = newer, b = older
                 Vector3 ba = b - a;
                 float ba2 = ba.sqrMagnitude;
                 Vector3 pt;
@@ -143,7 +141,7 @@ namespace MissileCameraRemoteControl.Control
                 {
                     best = d;
                     bestPt = pt;
-                    Vector3 seg = a - b; // older → newer
+                    Vector3 seg = a - b; // older → newer (toward lead)
                     bestTan = seg.sqrMagnitude > 1e-6f ? seg.normalized : bestTan;
                 }
 
@@ -164,16 +162,6 @@ namespace MissileCameraRemoteControl.Control
             while (idx < 0)
                 idx += Capacity;
             return _pos[idx % Capacity];
-        }
-
-        private static float DistPointToSegment(Vector3 p, Vector3 a, Vector3 b)
-        {
-            Vector3 ab = b - a;
-            float ab2 = ab.sqrMagnitude;
-            if (ab2 < 1e-8f)
-                return Vector3.Distance(p, a);
-            float t = Mathf.Clamp01(Vector3.Dot(p - a, ab) / ab2);
-            return Vector3.Distance(p, a + ab * t);
         }
     }
 }
