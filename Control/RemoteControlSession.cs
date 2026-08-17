@@ -177,6 +177,45 @@ namespace MissileCameraRemoteControl.Control
             return PickNearest(pool);
         }
 
+        /// <summary>External take channel (Bridge) — same picking logic as ToggleNearest's Take
+        /// branch, but explicit (never releases an existing session) so a browser "take" button
+        /// has predictable behavior regardless of current state.</summary>
+        internal static bool TryTakeNearest()
+        {
+            if (!MissileCameraFsAccess.IsFullscreenActive)
+                return false;
+
+            RefreshPool();
+            Missile? best = PickForTake(_pool);
+            if (best == null)
+                return false;
+
+            Take(best);
+            return true;
+        }
+
+        /// <summary>External take-by-pool-index channel (Bridge) — for a browser missile picker
+        /// mirroring RcMissilePickerUi. Call RefreshPool() (via the Pool getter usage below) is
+        /// implicit: callers should read Pool right before to build a matching index list.</summary>
+        internal static bool TryTakeAt(int index)
+        {
+            if (!MissileCameraFsAccess.IsFullscreenActive)
+                return false;
+            if (index < 0 || index >= _pool.Count)
+                return false;
+
+            Missile candidate = _pool[index];
+            if (candidate == null || candidate.disabled)
+                return false;
+            if (!AuthorityGate.CanControl(candidate) || !AuthorityGate.IsAllied(candidate))
+                return false;
+            if (!MissileAccess.IsRcControllable(candidate))
+                return false;
+
+            Take(candidate);
+            return true;
+        }
+
         internal static void Take(Missile missile)
         {
             if (!MissileCameraFsAccess.IsFullscreenActive)

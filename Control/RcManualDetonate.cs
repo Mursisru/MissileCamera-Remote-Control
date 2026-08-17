@@ -41,6 +41,24 @@ namespace MissileCameraRemoteControl.Control
             TryDetonate(m);
         }
 
+        /// <summary>External detonate channel (Bridge) — same guards + TryDetonate as the physical
+        /// key, just without the RawKeyDown edge-detect (the caller — a single POST — is already
+        /// one-shot).</summary>
+        internal static bool TriggerExternal()
+        {
+            if (!RcConfig.Enabled.Value) return false;
+            if (!MissileCameraFsAccess.IsFullscreenActive) return false;
+            if (!RemoteControlSession.IsActive) return false;
+
+            Missile? m = RemoteControlSession.Controlled;
+            if (m == null || m.disabled) return false;
+            if (!RemoteControlSession.OwnsMissile(m)) return false;
+            if (!AuthorityGate.CanControl(m)) return false;
+
+            TryDetonate(m);
+            return true;
+        }
+
         private static void TryDetonate(Missile missile)
         {
             try
