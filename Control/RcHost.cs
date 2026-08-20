@@ -2,6 +2,7 @@ using System;
 using System.Reflection;
 using BepInEx.Logging;
 using HarmonyLib;
+using MissileCameraRemoteControl.Access;
 using MissileCameraRemoteControl.Cloning;
 using MissileCameraRemoteControl.Config;
 using MissileCameraRemoteControl.Update;
@@ -288,6 +289,7 @@ namespace MissileCameraRemoteControl.Control
                 // Manual fuse first in the frame — minimize input→boom latency.
                 RcManualDetonate.Tick();
                 RemoteControlSession.Tick();
+                RcRewiredInput.EndFrame();
                 RcFsOwnshipGuard.Tick();
             }
             catch (Exception ex)
