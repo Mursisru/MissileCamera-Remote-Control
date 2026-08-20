@@ -12,7 +12,6 @@ namespace MissileCameraRemoteControl.Control
     {
         private const float FinDelay = 0.5f;
         private const float ArmDelay = 2f;
-        private const float OwnerClearM = 20f;
 
         private static int _missileId;
         private static bool _finsDone;
@@ -66,25 +65,8 @@ namespace MissileCameraRemoteControl.Control
                 }
             }
 
-            if (!_tangibleDone)
-            {
-                try
-                {
-                    if (missile.IsTangible())
-                    {
-                        _tangibleDone = true;
-                    }
-                    else if (IsClearOfOwner(missile))
-                    {
-                        missile.SetTangible(true);
-                        _tangibleDone = true;
-                    }
-                }
-                catch
-                {
-                    // retry
-                }
-            }
+            if (!_tangibleDone && RcTangibleEnsure.TrySet(missile))
+                _tangibleDone = true;
 
             if (!_armDone && age > ArmDelay)
             {
@@ -101,23 +83,5 @@ namespace MissileCameraRemoteControl.Control
             }
         }
 
-        private static bool IsClearOfOwner(Missile missile)
-        {
-            try
-            {
-                Unit? owner = missile.owner;
-                if (owner == null || owner.disabled)
-                    return missile.timeSinceSpawn > 3f;
-
-                return !FastMath.InRange(
-                    owner.GlobalPosition(),
-                    missile.GlobalPosition(),
-                    OwnerClearM);
-            }
-            catch
-            {
-                return missile.timeSinceSpawn > 3f;
-            }
-        }
     }
 }

@@ -590,28 +590,8 @@ namespace MissileCameraRemoteControl.Control
                 catch { /* retry */ }
             }
 
-            if (!f.TangibleDone)
-            {
-                try
-                {
-                    if (m.IsTangible())
-                    {
-                        f.TangibleDone = true;
-                    }
-                    else
-                    {
-                        Unit? owner = m.owner;
-                        bool clear = owner == null || owner.disabled
-                            || !FastMath.InRange(owner.GlobalPosition(), m.GlobalPosition(), 20f);
-                        if (clear || age > 3f)
-                        {
-                            m.SetTangible(true);
-                            f.TangibleDone = true;
-                        }
-                    }
-                }
-                catch { /* retry */ }
-            }
+            if (!f.TangibleDone && RcTangibleEnsure.TrySet(m))
+                f.TangibleDone = true;
 
             if (!f.ArmDone && age > 2f)
             {

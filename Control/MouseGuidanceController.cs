@@ -29,6 +29,7 @@ namespace MissileCameraRemoteControl.Control
         private static Vector3 _lastAimLocal;
         private static bool _hasLastAim;
         private static readonly Vector3[] _viewCorners = new Vector3[4];
+        private static RcAimInputMode _activeAimMode = RcAimInputMode.Mouse;
 
         /// <summary>Commanded aim (nose / SetAimpoint) — formation shares this.</summary>
         internal static Vector3 WorldAimDir => _commandAimDir;
@@ -66,6 +67,7 @@ namespace MissileCameraRemoteControl.Control
             _lastMissile = null;
             _pendingYawDeg = 0f;
             _pendingPitchDeg = 0f;
+            _activeAimMode = RcConfig.ResolvedAimInputMode;
             _hasLastAim = false;
             _lastAimLocal = Vector3.zero;
             FsAimReticle.SetVisible(false);
@@ -81,7 +83,18 @@ namespace MissileCameraRemoteControl.Control
             if (Input.GetMouseButton(1))
                 return;
 
-            RcAimInputMode mode = RcConfig.AimInputMode.Value;
+            RcAimInputMode mode = RcConfig.ResolvedAimInputMode;
+            if (mode != _activeAimMode)
+            {
+                _activeAimMode = mode;
+                _pendingYawDeg = 0f;
+                _pendingPitchDeg = 0f;
+                if (_initialized)
+                    _commandAimDir = _desiredAimDir.sqrMagnitude > 1e-8f
+                        ? _desiredAimDir.normalized
+                        : missile.transform.forward;
+            }
+
             if (mode == RcAimInputMode.Mouse)
             {
                 PollMouse();
@@ -108,34 +121,43 @@ namespace MissileCameraRemoteControl.Control
 
         private static void PollKeyScheme(RcAimInputMode mode, float rate)
         {
+            float yaw = 0f;
+            float pitch = 0f;
+
             switch (mode)
             {
                 case RcAimInputMode.WASD:
-                    if (Input.GetKey(KeyCode.A)) _pendingYawDeg -= rate;
-                    if (Input.GetKey(KeyCode.D)) _pendingYawDeg += rate;
-                    if (Input.GetKey(KeyCode.W)) _pendingPitchDeg -= rate;
-                    if (Input.GetKey(KeyCode.S)) _pendingPitchDeg += rate;
+                    if (RcRewiredInput.KeyHeld(KeyCode.A)) yaw -= 1f;
+                    if (RcRewiredInput.KeyHeld(KeyCode.D)) yaw += 1f;
+                    if (RcRewiredInput.KeyHeld(KeyCode.W)) pitch -= 1f;
+                    if (RcRewiredInput.KeyHeld(KeyCode.S)) pitch += 1f;
                     break;
                 case RcAimInputMode.Arrows:
-                    if (Input.GetKey(KeyCode.LeftArrow)) _pendingYawDeg -= rate;
-                    if (Input.GetKey(KeyCode.RightArrow)) _pendingYawDeg += rate;
-                    if (Input.GetKey(KeyCode.UpArrow)) _pendingPitchDeg -= rate;
-                    if (Input.GetKey(KeyCode.DownArrow)) _pendingPitchDeg += rate;
+                    if (RcRewiredInput.KeyHeld(KeyCode.LeftArrow)) yaw -= 1f;
+                    if (RcRewiredInput.KeyHeld(KeyCode.RightArrow)) yaw += 1f;
+                    if (RcRewiredInput.KeyHeld(KeyCode.UpArrow)) pitch -= 1f;
+                    if (RcRewiredInput.KeyHeld(KeyCode.DownArrow)) pitch += 1f;
                     break;
                 case RcAimInputMode.NumPadArrows:
-                    if (Input.GetKey(KeyCode.Keypad4)) _pendingYawDeg -= rate;
-                    if (Input.GetKey(KeyCode.Keypad6)) _pendingYawDeg += rate;
-                    if (Input.GetKey(KeyCode.Keypad8)) _pendingPitchDeg -= rate;
-                    if (Input.GetKey(KeyCode.Keypad2) || Input.GetKey(KeyCode.Keypad5))
-                        _pendingPitchDeg += rate;
+                    if (RcRewiredInput.KeyHeld(KeyCode.Keypad4)) yaw -= 1f;
+                    if (RcRewiredInput.KeyHeld(KeyCode.Keypad6)) yaw += 1f;
+                    if (RcRewiredInput.KeyHeld(KeyCode.Keypad8)) pitch -= 1f;
+                    if (RcRewiredInput.KeyHeld(KeyCode.Keypad2) || RcRewiredInput.KeyHeld(KeyCode.Keypad5))
+                        pitch += 1f;
                     break;
                 case RcAimInputMode.Custom:
-                    if (KeybindPoll.IsHeld(RcConfig.AimYawLeft.Value)) _pendingYawDeg -= rate;
-                    if (KeybindPoll.IsHeld(RcConfig.AimYawRight.Value)) _pendingYawDeg += rate;
-                    if (KeybindPoll.IsHeld(RcConfig.AimPitchUp.Value)) _pendingPitchDeg -= rate;
-                    if (KeybindPoll.IsHeld(RcConfig.AimPitchDown.Value)) _pendingPitchDeg += rate;
+                    if (KeybindPoll.IsHeld(RcConfig.AimYawLeft.Value)) yaw -= 1f;
+                    if (KeybindPoll.IsHeld(RcConfig.AimYawRight.Value)) yaw += 1f;
+                    if (KeybindPoll.IsHeld(RcConfig.AimPitchUp.Value)) pitch -= 1f;
+                    if (KeybindPoll.IsHeld(RcConfig.AimPitchDown.Value)) pitch += 1f;
                     break;
             }
+
+            if (yaw * yaw + pitch * pitch < 1e-6f)
+                return;
+
+            _pendingYawDeg += yaw * rate;
+            _pendingPitchDeg += pitch * rate;
         }
 
         /// <summary>
