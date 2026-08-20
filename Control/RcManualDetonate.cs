@@ -10,6 +10,7 @@ namespace MissileCameraRemoteControl.Control
     /// FS + RC: ManualDetonate (default Space) → vanilla Detonate via allow gate.
     /// Nuclear warheads: refuse airburst — only near terrain/sea.
     /// </summary>
+    // Continued in Bridge/RcManualDetonate.Bridge.cs
     internal static partial class RcManualDetonate
     {
         private const float NukeSurfaceMaxAltM = 40f;

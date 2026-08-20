@@ -7,6 +7,7 @@ namespace MissileCameraRemoteControl.Control
     /// <summary>
     /// WT aim: reticle = desired; SetAimpoint = command (gLimit slew, full converge to marker).
     /// </summary>
+    // Continued in Bridge/MouseGuidanceController.Bridge.cs
     internal static partial class MouseGuidanceController
     {
         private const float MouseDegPerUnit = 1.25f;

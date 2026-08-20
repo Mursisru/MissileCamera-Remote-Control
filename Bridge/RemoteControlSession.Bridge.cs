@@ -2,6 +2,7 @@ using MissileCameraRemoteControl.Access;
 
 namespace MissileCameraRemoteControl.Control
 {
+    // Continued from Control/RemoteControlSession.cs
     internal static partial class RemoteControlSession
     {
         /// <summary>External take channel (Bridge) — same picking logic as ToggleNearest's Take

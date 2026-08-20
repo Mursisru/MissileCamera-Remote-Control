@@ -1,5 +1,6 @@
 namespace MissileCameraRemoteControl.Control
 {
+    // Continued from Control/RcManualDetonate.cs
     internal static partial class RcManualDetonate
     {
         /// <summary>External detonate channel — same guards + TryDetonate as the physical key,

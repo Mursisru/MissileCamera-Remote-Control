@@ -8,6 +8,7 @@ using UnityEngine;
 namespace MissileCameraRemoteControl.Control
 {
     /// <summary>Active RC session — only while MissileCamera fullscreen is up.</summary>
+    // Continued in Bridge/RemoteControlSession.Bridge.cs
     internal static partial class RemoteControlSession
     {
         private static Missile? _controlled;

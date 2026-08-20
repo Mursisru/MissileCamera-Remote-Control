@@ -2,6 +2,7 @@ using UnityEngine;
 
 namespace MissileCameraRemoteControl.Control
 {
+    // Continued from Control/ThrottleController.cs
     internal static partial class ThrottleController
     {
         private static bool _externalBoostHeld;

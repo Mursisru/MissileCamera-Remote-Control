@@ -3,6 +3,7 @@ using UnityEngine;
 
 namespace MissileCameraRemoteControl.Config
 {
+    // Continued in Bridge/RcConfig.Bridge.cs
     internal static partial class RcConfig
     {
         internal static bool IsBound { get; private set; }

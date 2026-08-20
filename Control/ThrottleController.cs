@@ -13,6 +13,7 @@ namespace MissileCameraRemoteControl.Control
     /// Lost link: throttle locked at 1, boost blocked.
     /// Degraded: thr locked at 1, AB still allowed (optical LoS to own jet often fails in FS).
     /// </summary>
+    // Continued in Bridge/ThrottleController.Bridge.cs
     internal static partial class ThrottleController
     {
         private const float RampPerSec = 2.85f;

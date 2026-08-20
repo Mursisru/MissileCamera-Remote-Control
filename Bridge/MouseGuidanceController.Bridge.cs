@@ -1,5 +1,6 @@
 namespace MissileCameraRemoteControl.Control
 {
+    // Continued from Control/MouseGuidanceController.cs
     internal static partial class MouseGuidanceController
     {
         /// <summary>

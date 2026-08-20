@@ -2,6 +2,7 @@ using BepInEx.Configuration;
 
 namespace MissileCameraRemoteControl.Config
 {
+    // Continued from Config/RcConfig.cs
     internal static partial class RcConfig
     {
         // Gates only the physical aim polling — external aim (McRcBridge.InjectAimDelta) stays
