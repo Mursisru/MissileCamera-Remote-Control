@@ -7,9 +7,6 @@ namespace MissileCameraRemoteControl.Control
     /// <summary>
     /// WT aim: reticle = desired; SetAimpoint = command (gLimit slew, full converge to marker).
     /// </summary>
-    // Bridge/MouseGuidanceController.Bridge.cs holds the external-consumer half (InjectExternal)
-    // as a partial-class extension. This file keeps only the one-line gate in Tick() where
-    // existing logic itself needs to widen to respect PhysicalAimEnabled.
     internal static partial class MouseGuidanceController
     {
         private const float MouseDegPerUnit = 1.25f;

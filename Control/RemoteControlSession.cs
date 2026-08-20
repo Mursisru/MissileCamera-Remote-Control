@@ -8,10 +8,6 @@ using UnityEngine;
 namespace MissileCameraRemoteControl.Control
 {
     /// <summary>Active RC session — only while MissileCamera fullscreen is up.</summary>
-    // Bridge/RemoteControlSession.Bridge.cs holds only the new external entry points
-    // (TryTakeNearest, TryTakeAt) as a partial-class extension. IsEligible stays here since it's
-    // Mursisru's own pre-existing PickForTake eligibility rule, just extracted into a function
-    // both entry points call — it shouldn't get lost in the Bridge file.
     internal static partial class RemoteControlSession
     {
         private static Missile? _controlled;

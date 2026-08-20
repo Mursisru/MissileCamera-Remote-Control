@@ -3,8 +3,6 @@ using UnityEngine;
 
 namespace MissileCameraRemoteControl.Config
 {
-    // Bridge/RcConfig.Bridge.cs holds the external-consumer half (PhysicalAimEnabled's
-    // declaration + bind) as a partial-class extension, called from Bind() below via BindExtras.
     internal static partial class RcConfig
     {
         internal static bool IsBound { get; private set; }

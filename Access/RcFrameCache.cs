@@ -30,14 +30,9 @@ namespace MissileCameraRemoteControl.Access
             _hudRoot = null;
         }
 
-        // True either when the pilot is really in fullscreen, OR when the base mod's public Bridge
-        // reports an active capture (McBaseBridgeAccess.IsCaptureActive) — which is only true
-        // between an external consumer's RequestCapture(true)/RequestCapture(false) pair (e.g.
-        // NOXMFD's browser MFD actually keeping the feed pipeline live headlessly), not merely
-        // whenever some owned missile happens to be trackable. See Access/McBaseBridgeAccess.cs.
-        // Real FS is checked first since it's already cached per-frame and cheaper than the
-        // reflected call. Renamed from IsFullscreenActive — that name stopped matching once this
-        // stopped being FS-only.
+        // True either when the pilot is really in fullscreen, or when a bridge consumer has an
+        // active capture request (McBaseBridgeAccess.IsCaptureActive) — not merely whenever some
+        // owned missile happens to be trackable.
         internal static bool IsControlAllowed
         {
             get

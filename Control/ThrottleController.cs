@@ -13,10 +13,6 @@ namespace MissileCameraRemoteControl.Control
     /// Lost link: throttle locked at 1, boost blocked.
     /// Degraded: thr locked at 1, AB still allowed (optical LoS to own jet often fails in FS).
     /// </summary>
-    // Bridge/ThrottleController.Bridge.cs holds the external-consumer half
-    // (_externalBoostHeld's declaration + accessors, SetExternal, AdjustExternal) as a
-    // partial-class extension. This file keeps only the two one-line touches where existing
-    // logic itself needs to widen (Reset, ResolveBoost).
     internal static partial class ThrottleController
     {
         private const float RampPerSec = 2.85f;
@@ -121,8 +117,7 @@ namespace MissileCameraRemoteControl.Control
 
         private static void ResolveBoost(Missile missile)
         {
-            // AB only from afterburner bind (physical or external/Bridge) + fuel — NEVER from
-            // formation FOLLOW.
+            // AB only from afterburner bind (physical or external) + fuel — NEVER from formation FOLLOW.
             _boost = (KeybindPoll.IsHeld(RcConfig.Boost.Value) || _externalBoostHeld)
                 && MissileAccess.HasMotorFuel(missile);
         }

@@ -2,10 +2,6 @@ using MissileCameraRemoteControl.Access;
 
 namespace MissileCameraRemoteControl.Control
 {
-    // Partial-class extension of Control/RemoteControlSession.cs — holds only the two new
-    // external entry points. The eligibility check they share with PickForTake (IsEligible) stays
-    // in the other file: that logic is Mursisru's own pre-existing "what counts as controllable"
-    // rule, just extracted into a function both entry points call, and shouldn't get lost in here.
     internal static partial class RemoteControlSession
     {
         /// <summary>External take channel (Bridge) — same picking logic as ToggleNearest's Take

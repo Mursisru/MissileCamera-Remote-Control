@@ -10,10 +10,6 @@ namespace MissileCameraRemoteControl.Control
     /// FS + RC: ManualDetonate (default Space) → vanilla Detonate via allow gate.
     /// Nuclear warheads: refuse airburst — only near terrain/sea.
     /// </summary>
-    // Bridge/RcManualDetonate.Bridge.cs holds only the new external entry point
-    // (TriggerExternal) as a partial-class extension — it calls CanDetonate() below, which stays
-    // here since that guard chain is Mursisru's own pre-existing Tick() logic, just extracted into
-    // a function both channels can share.
     internal static partial class RcManualDetonate
     {
         private const float NukeSurfaceMaxAltM = 40f;

@@ -2,9 +2,6 @@ using UnityEngine;
 
 namespace MissileCameraRemoteControl.Control
 {
-    // Partial-class extension of Control/ThrottleController.cs — the external-consumer half
-    // lives here so that file stays mostly Lupfine's/Mursisru's original throttle logic, with only
-    // the two spots that widen to account for external input (Reset, ResolveBoost) touched inline.
     internal static partial class ThrottleController
     {
         private static bool _externalBoostHeld;
