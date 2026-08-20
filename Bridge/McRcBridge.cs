@@ -30,9 +30,10 @@ namespace MissileCameraRemoteControl.Bridge
 
         // ── State ──────────────────────────────────────────────────────────────
 
-        /// <summary>MissileCamera fullscreen feed is up (independent of whether RC has taken a
-        /// missile yet — matches RcFrameCache.IsFullscreenActive).</summary>
-        public static bool IsFullscreenActive => RcFrameCache.IsFullscreenActive;
+        /// <summary>MissileCamera feed pipeline is up — real Fullscreen, or a bridge consumer (e.g.
+        /// NOXMFD) holding it open via the base mod's McBridge.RequestCapture — independent of
+        /// whether RC has taken a missile yet (matches RcFrameCache.IsControlAllowed).</summary>
+        public static bool IsFullscreenActive => RcFrameCache.IsControlAllowed;
 
         /// <summary>An RC session is actively controlling a missile right now.</summary>
         public static bool IsControlling => RemoteControlSession.IsActive;

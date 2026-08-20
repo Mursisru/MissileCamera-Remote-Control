@@ -45,7 +45,7 @@ namespace MissileCameraRemoteControl.HarmonyPatches
         {
             if (_passthrough || key == KeyCode.None)
                 return false;
-            if (!MissileCameraFsAccess.IsFullscreenActive)
+            if (!MissileCameraFsAccess.IsControlAllowed)
                 return false;
             if (!RemoteControlSession.IsActive)
                 return false;

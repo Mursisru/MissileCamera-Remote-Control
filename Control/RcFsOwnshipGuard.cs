@@ -18,7 +18,7 @@ namespace MissileCameraRemoteControl.Control
 
         internal static void Tick()
         {
-            if (!MissileCameraFsAccess.IsFullscreenActive)
+            if (!MissileCameraFsAccess.IsControlAllowed)
             {
                 _trackedOwnship = null;
                 return;
