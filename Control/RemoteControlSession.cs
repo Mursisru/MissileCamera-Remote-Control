@@ -8,10 +8,10 @@ using UnityEngine;
 namespace MissileCameraRemoteControl.Control
 {
     /// <summary>Active RC session — only while MissileCamera fullscreen is up.</summary>
-    // Bridge/RemoteControlSession.Bridge.cs holds the external-consumer half (TryTakeNearest,
-    // TryTakeAt, IsEligible) as a partial-class extension. This file keeps the one call-site swap
-    // in PickForTake (reuses IsEligible instead of its own inline copy) plus the rename-consequence
-    // touches from the IsControlAllowed rename.
+    // Bridge/RemoteControlSession.Bridge.cs holds only the new external entry points
+    // (TryTakeNearest, TryTakeAt) as a partial-class extension. IsEligible stays here since it's
+    // Mursisru's own pre-existing PickForTake eligibility rule, just extracted into a function
+    // both entry points call — it shouldn't get lost in the Bridge file.
     internal static partial class RemoteControlSession
     {
         private static Missile? _controlled;
@@ -136,6 +136,14 @@ namespace MissileCameraRemoteControl.Control
 
             Take(best);
         }
+
+        /// <summary>Take-eligibility check shared by PickForTake (below) and
+        /// Bridge/RemoteControlSession.Bridge.cs's TryTakeAt, so the two entry points can't
+        /// disagree about what "controllable" means.</summary>
+        private static bool IsEligible(Missile? candidate) =>
+            candidate != null && !candidate.disabled
+            && AuthorityGate.CanControl(candidate) && AuthorityGate.IsAllied(candidate)
+            && MissileAccess.IsRcControllable(candidate);
 
         /// <summary>Prefer the missile on the FS feed; fallback nearest to ownship.</summary>
         private static Missile? PickForTake(List<Missile> pool)

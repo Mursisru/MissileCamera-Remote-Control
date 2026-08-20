@@ -1,13 +1,9 @@
-using MissileCameraRemoteControl.Access;
-using MissileCameraRemoteControl.Config;
-using MissileCameraRemoteControl.Network;
-
 namespace MissileCameraRemoteControl.Control
 {
-    // Partial-class extension of Control/RcManualDetonate.cs — the external-consumer half lives
-    // here: the Bridge trigger, and the guard chain it shares with the physical key's Tick() in
-    // the other file (so the two channels can't silently drift apart). Shares TryDetonate via the
-    // partial class.
+    // Partial-class extension of Control/RcManualDetonate.cs — holds only the new external entry
+    // point. The guard chain it shares with the physical key's Tick() (CanDetonate) stays in the
+    // other file: that logic is Mursisru's own pre-existing rule for when detonate is allowed,
+    // just extracted into a function both channels call, and shouldn't get lost in here.
     internal static partial class RcManualDetonate
     {
         /// <summary>External detonate channel (Bridge) — same guards + TryDetonate as the physical
@@ -21,23 +17,6 @@ namespace MissileCameraRemoteControl.Control
 
             TryDetonate(m);
             return true;
-        }
-
-        /// <summary>Guard chain shared by the physical key (Tick, other file) and TriggerExternal
-        /// above so the two can't silently drift apart. Returns the missile that's clear to
-        /// detonate, or null if any guard rejects.</summary>
-        private static Missile? CanDetonate()
-        {
-            if (!RcConfig.Enabled.Value) return null;
-            if (!MissileCameraFsAccess.IsControlAllowed) return null;
-            if (!RemoteControlSession.IsActive) return null;
-
-            Missile? m = RemoteControlSession.Controlled;
-            if (m == null || m.disabled) return null;
-            if (!RemoteControlSession.OwnsMissile(m)) return null;
-            if (!AuthorityGate.CanControl(m)) return null;
-
-            return m;
         }
     }
 }

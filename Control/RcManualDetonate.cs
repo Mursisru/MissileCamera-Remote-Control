@@ -10,9 +10,10 @@ namespace MissileCameraRemoteControl.Control
     /// FS + RC: ManualDetonate (default Space) → vanilla Detonate via allow gate.
     /// Nuclear warheads: refuse airburst — only near terrain/sea.
     /// </summary>
-    // Bridge/RcManualDetonate.Bridge.cs holds the external-consumer half (TriggerExternal,
-    // CanDetonate) as a partial-class extension. This file keeps the one line in Tick() that
-    // calls the shared CanDetonate() guard instead of its own inline copy.
+    // Bridge/RcManualDetonate.Bridge.cs holds only the new external entry point
+    // (TriggerExternal) as a partial-class extension — it calls CanDetonate() below, which stays
+    // here since that guard chain is Mursisru's own pre-existing Tick() logic, just extracted into
+    // a function both channels can share.
     internal static partial class RcManualDetonate
     {
         private const float NukeSurfaceMaxAltM = 40f;
@@ -31,6 +32,23 @@ namespace MissileCameraRemoteControl.Control
                 return;
 
             TryDetonate(m);
+        }
+
+        /// <summary>Guard chain shared by the physical key (Tick above) and the external channel
+        /// (Bridge/RcManualDetonate.Bridge.cs TriggerExternal) so the two can't silently drift
+        /// apart. Returns the missile that's clear to detonate, or null if any guard rejects.</summary>
+        private static Missile? CanDetonate()
+        {
+            if (!RcConfig.Enabled.Value) return null;
+            if (!MissileCameraFsAccess.IsControlAllowed) return null;
+            if (!RemoteControlSession.IsActive) return null;
+
+            Missile? m = RemoteControlSession.Controlled;
+            if (m == null || m.disabled) return null;
+            if (!RemoteControlSession.OwnsMissile(m)) return null;
+            if (!AuthorityGate.CanControl(m)) return null;
+
+            return m;
         }
 
         private static void TryDetonate(Missile missile)

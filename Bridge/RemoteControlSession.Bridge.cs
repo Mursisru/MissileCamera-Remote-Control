@@ -1,22 +1,13 @@
 using MissileCameraRemoteControl.Access;
-using MissileCameraRemoteControl.Network;
 
 namespace MissileCameraRemoteControl.Control
 {
-    // Partial-class extension of Control/RemoteControlSession.cs — the external-consumer half
-    // lives here: the two Bridge take-channels, and the eligibility check they share with
-    // PickForTake in the other file (so the two entry points can't disagree about what
-    // "controllable" means). Shares _pool, PickForTake, Take, RefreshPool, and
-    // MissileCameraFsAccess/AuthorityGate/MissileAccess usage via the partial class.
+    // Partial-class extension of Control/RemoteControlSession.cs — holds only the two new
+    // external entry points. The eligibility check they share with PickForTake (IsEligible) stays
+    // in the other file: that logic is Mursisru's own pre-existing "what counts as controllable"
+    // rule, just extracted into a function both entry points call, and shouldn't get lost in here.
     internal static partial class RemoteControlSession
     {
-        /// <summary>Take-eligibility check shared by PickForTake (other file) and TryTakeAt below,
-        /// so the two entry points can't disagree about what "controllable" means.</summary>
-        private static bool IsEligible(Missile? candidate) =>
-            candidate != null && !candidate.disabled
-            && AuthorityGate.CanControl(candidate) && AuthorityGate.IsAllied(candidate)
-            && MissileAccess.IsRcControllable(candidate);
-
         /// <summary>External take channel (Bridge) — same picking logic as ToggleNearest's Take
         /// branch, but explicit (never releases an existing session) so a browser "take" button
         /// has predictable behavior regardless of current state.</summary>
