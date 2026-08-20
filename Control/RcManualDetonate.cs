@@ -1,6 +1,5 @@
 using MissileCameraRemoteControl.Access;
 using MissileCameraRemoteControl.Config;
-using MissileCameraRemoteControl.HarmonyPatches;
 using MissileCameraRemoteControl.Network;
 using UnityEngine;
 
@@ -32,10 +31,7 @@ namespace MissileCameraRemoteControl.Control
             if (!AuthorityGate.CanControl(m))
                 return;
 
-            KeyCode key = RcConfig.ManualDetonate.Value.MainKey;
-            if (key == KeyCode.None)
-                key = KeyCode.Space;
-            if (!RcSpaceKeyEatPatch.RawKeyDown(key))
+            if (!KeybindPoll.IsDown(RcConfig.ManualDetonate.Value))
                 return;
 
             TryDetonate(m);

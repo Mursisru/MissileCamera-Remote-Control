@@ -2,6 +2,14 @@
 
 All notable changes to **MissileCamera: Remote Control** are documented in this file.
 
+## [2.0.2] - 2026-08-20
+
+### Fixed
+
+- Missiles without a target stayed on `IgnoreCollisions` — enemies could not hit them (`RcTangibleEnsure` + Seek postfix).
+- `AimInputMode` config: Configuration Manager dropdown; WASD/Arrows via Rewired keyboard (not flight axes); pending aim cleared on mode switch (mouse lag after WASD).
+- Manual detonate (FS+RC Space): key poll via passthrough + Rewired when Harmony eats Space.
+
 ## [2.0.0] - 2026-08-10
 
 Major release consolidating everything since **1.0.0**.

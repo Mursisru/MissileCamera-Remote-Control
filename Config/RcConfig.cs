@@ -7,6 +7,9 @@ namespace MissileCameraRemoteControl.Config
     {
         internal static bool IsBound { get; private set; }
 
+        internal static RcAimInputMode ResolvedAimInputMode =>
+            RcAimInputModeParser.Parse(AimInputMode?.Value);
+
         internal static ConfigEntry<bool> Enabled { get; private set; } = null!;
         internal static ConfigEntry<bool> AiEquipRcClones { get; private set; } = null!;
         /// <summary>When false (default): only official RC clones. When true: any allied LocalSim munition.</summary>
@@ -19,7 +22,7 @@ namespace MissileCameraRemoteControl.Config
         internal static ConfigEntry<float> KeyAimSensitivity { get; private set; } = null!;
         internal static ConfigEntry<float> AimDistance { get; private set; } = null!;
         internal static ConfigEntry<float> AimLagSeconds { get; private set; } = null!;
-        internal static ConfigEntry<RcAimInputMode> AimInputMode { get; private set; } = null!;
+        internal static ConfigEntry<string> AimInputMode { get; private set; } = null!;
         internal static ConfigEntry<float> JetBoostThrottle { get; private set; } = null!;
         internal static ConfigEntry<float> JetBoostBurnMult { get; private set; } = null!;
         internal static ConfigEntry<float> SolidBoostThrottle { get; private set; } = null!;
@@ -70,8 +73,11 @@ namespace MissileCameraRemoteControl.Config
             AamProxMaxRangeM = config.Bind("Control", "AamProxMaxRangeM", 55f,
                 "Max slant range (meters) to evaluate AAM proximity burst.");
 
-            AimInputMode = config.Bind("Control", "AimInputMode", RcAimInputMode.Mouse,
-                "Mouse | WASD | Arrows | NumPadArrows | Custom. Custom uses AimYaw/Pitch binds below.");
+            AimInputMode = config.Bind("Control", "AimInputMode", "Mouse",
+                new ConfigDescription(
+                    "How to steer world-space aim under RC.",
+                    new AcceptableValueList<string>(
+                        "Mouse", "WASD", "Arrows", "NumPadArrows", "Custom")));
             MouseSensitivity = config.Bind("Control", "MouseSensitivity", 0.08f,
                 "Mouse aim rate for world-space WT reticle (lower = smoother).");
             KeyAimSensitivity = config.Bind("Control", "KeyAimSensitivity", 1f,
@@ -129,7 +135,7 @@ namespace MissileCameraRemoteControl.Config
             IsBound = true;
 
             RcPlugin.ModLogger?.LogInfo(
-                $"RC binds: Take={ToggleControl.Value} List={OpenMissileList.Value} Form={FormationFollow.Value} AimMode={AimInputMode.Value} " +
+                $"RC binds: Take={ToggleControl.Value} List={OpenMissileList.Value} Form={FormationFollow.Value} AimMode={ResolvedAimInputMode} " +
                 $"CustomAim=[{AimYawLeft.Value}/{AimYawRight.Value}/{AimPitchUp.Value}/{AimPitchDown.Value}] " +
                 $"Thr+={ThrottleUp.Value} Thr-={ThrottleDown.Value} AB={Boost.Value}");
         }
