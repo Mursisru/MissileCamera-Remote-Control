@@ -7,7 +7,10 @@ namespace MissileCameraRemoteControl.Control
     /// <summary>
     /// WT aim: reticle = desired; SetAimpoint = command (gLimit slew, full converge to marker).
     /// </summary>
-    internal static class MouseGuidanceController
+    // Bridge/MouseGuidanceController.Bridge.cs holds the external-consumer half (InjectExternal)
+    // as a partial-class extension. This file keeps only the one-line gate in Tick() where
+    // existing logic itself needs to widen to respect PhysicalAimEnabled.
+    internal static partial class MouseGuidanceController
     {
         private const float MouseDegPerUnit = 1.25f;
         private const float MouseDeadzone = 0.02f;
@@ -36,20 +39,6 @@ namespace MissileCameraRemoteControl.Control
         internal static Vector3 DesiredAimDir => _desiredAimDir;
 
         internal static Vector2 GetReticleViewport() => _lastStableViewport;
-
-        /// <summary>
-        /// External aim channel (Bridge) — adds to the same pending yaw/pitch buffer as
-        /// PollMouse/PollKeyScheme, so a browser/HOTAS-app drag and physical mouse input compose
-        /// naturally instead of one silently overwriting the other. Degrees, same convention as
-        /// PollMouse (yaw right positive, pitch up negative — matches -my below).
-        /// </summary>
-        internal static void InjectExternal(float yawDeltaDeg, float pitchDeltaDeg)
-        {
-            if (float.IsNaN(yawDeltaDeg) || float.IsInfinity(yawDeltaDeg)) yawDeltaDeg = 0f;
-            if (float.IsNaN(pitchDeltaDeg) || float.IsInfinity(pitchDeltaDeg)) pitchDeltaDeg = 0f;
-            _pendingYawDeg += yawDeltaDeg;
-            _pendingPitchDeg += pitchDeltaDeg;
-        }
 
         internal static bool TryGetLastAimLocal(out Vector3 aimLocal)
         {

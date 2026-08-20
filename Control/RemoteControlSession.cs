@@ -8,7 +8,11 @@ using UnityEngine;
 namespace MissileCameraRemoteControl.Control
 {
     /// <summary>Active RC session — only while MissileCamera fullscreen is up.</summary>
-    internal static class RemoteControlSession
+    // Bridge/RemoteControlSession.Bridge.cs holds the external-consumer half (TryTakeNearest,
+    // TryTakeAt, IsEligible) as a partial-class extension. This file keeps the one call-site swap
+    // in PickForTake (reuses IsEligible instead of its own inline copy) plus the rename-consequence
+    // touches from the IsControlAllowed rename.
+    internal static partial class RemoteControlSession
     {
         private static Missile? _controlled;
         private static readonly List<Missile> _pool = new List<Missile>(32);
@@ -133,13 +137,6 @@ namespace MissileCameraRemoteControl.Control
             Take(best);
         }
 
-        /// <summary>Take-eligibility check shared by PickForTake (below) and TryTakeAt, so the two
-        /// entry points can't disagree about what "controllable" means.</summary>
-        private static bool IsEligible(Missile? candidate) =>
-            candidate != null && !candidate.disabled
-            && AuthorityGate.CanControl(candidate) && AuthorityGate.IsAllied(candidate)
-            && MissileAccess.IsRcControllable(candidate);
-
         /// <summary>Prefer the missile on the FS feed; fallback nearest to ownship.</summary>
         private static Missile? PickForTake(List<Missile> pool)
         {
@@ -180,41 +177,6 @@ namespace MissileCameraRemoteControl.Control
             }
 
             return PickNearest(pool);
-        }
-
-        /// <summary>External take channel (Bridge) — same picking logic as ToggleNearest's Take
-        /// branch, but explicit (never releases an existing session) so a browser "take" button
-        /// has predictable behavior regardless of current state.</summary>
-        internal static bool TryTakeNearest()
-        {
-            if (!MissileCameraFsAccess.IsControlAllowed)
-                return false;
-
-            RefreshPool();
-            Missile? best = PickForTake(_pool);
-            if (best == null)
-                return false;
-
-            Take(best);
-            return true;
-        }
-
-        /// <summary>External take-by-pool-index channel (Bridge) — for a browser missile picker
-        /// mirroring RcMissilePickerUi. Call RefreshPool() (via the Pool getter usage below) is
-        /// implicit: callers should read Pool right before to build a matching index list.</summary>
-        internal static bool TryTakeAt(int index)
-        {
-            if (!MissileCameraFsAccess.IsControlAllowed)
-                return false;
-            if (index < 0 || index >= _pool.Count)
-                return false;
-
-            Missile candidate = _pool[index];
-            if (!IsEligible(candidate))
-                return false;
-
-            Take(candidate);
-            return true;
         }
 
         internal static void Take(Missile missile)

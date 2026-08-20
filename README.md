@@ -124,7 +124,7 @@ Useful config toggles:
 | `General.AllowAnyMunition` | `false` | Remote-control any allied LocalSim munition |
 | `General.AiEquipRcClones` | `true` | AI loadouts swap stock → RC clones |
 | `Control.AutoFormationFollow` | `false` | Auto-engage formation on Take |
-| `Control.PhysicalAimEnabled` | `true` | Whether in-game mouse/key input steers the missile. Turn **off** when flying via an external MFD (e.g. NOXMFD's browser page) so your own mouse doesn't fight its drag-to-aim — the MFD keeps working either way |
+| `Control.PhysicalAimEnabled` | `true` | Whether in-game mouse/key input steers the missile |
 | `Updates.CheckForUpdates` | `true` | Compare `AppVersion` to latest full GitHub release |
 | `Updates.DontShowAgain` | `false` | Suppress outdated-version prompt (set by in-game checkbox) |
 

@@ -13,7 +13,11 @@ namespace MissileCameraRemoteControl.Control
     /// Lost link: throttle locked at 1, boost blocked.
     /// Degraded: thr locked at 1, AB still allowed (optical LoS to own jet often fails in FS).
     /// </summary>
-    internal static class ThrottleController
+    // Bridge/ThrottleController.Bridge.cs holds the external-consumer half
+    // (_externalBoostHeld's declaration + accessors, SetExternal, AdjustExternal) as a
+    // partial-class extension. This file keeps only the two one-line touches where existing
+    // logic itself needs to widen (Reset, ResolveBoost).
+    internal static partial class ThrottleController
     {
         private const float RampPerSec = 2.85f;
         private const float TapStep = 0.1f;
@@ -29,7 +33,6 @@ namespace MissileCameraRemoteControl.Control
         private static float _throttle = 1f;
         private static float _appliedThrottle = float.NaN;
         private static bool _boost;
-        private static bool _externalBoostHeld;
         private static RcEngineKind _engine = RcEngineKind.Jet;
 
         internal static float UiThrottle => _throttle;
@@ -42,27 +45,6 @@ namespace MissileCameraRemoteControl.Control
             _boost = false;
             _externalBoostHeld = false;
             _engine = RcEngineKind.Jet;
-        }
-
-        /// <summary>External throttle channel (Bridge) — absolute set, same clamp as the keybind
-        /// ramp. Persists until changed again (Tick only moves _throttle while a physical key is
-        /// actually held), so callers set-and-forget rather than resending every frame.</summary>
-        internal static void SetExternal(float value01)
-        {
-            _throttle = Mathf.Clamp01(value01);
-        }
-
-        /// <summary>External throttle channel (Bridge) — relative nudge, mirrors the tap step.</summary>
-        internal static void AdjustExternal(float delta)
-        {
-            _throttle = Mathf.Clamp01(_throttle + delta);
-        }
-
-        /// <summary>External afterburner hold (Bridge). Level-triggered like a physical keybind
-        /// hold — caller reports held/released, ResolveBoost ORs it with the keybind each tick.</summary>
-        internal static void SetExternalBoost(bool held)
-        {
-            _externalBoostHeld = held;
         }
 
         internal static void OnTakeControl(Missile missile)
