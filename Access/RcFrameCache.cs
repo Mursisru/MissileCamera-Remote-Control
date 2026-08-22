@@ -14,6 +14,8 @@ namespace MissileCameraRemoteControl.Access
         private static bool _viewQueried;
         private static RectTransform? _hudRoot;
         private static bool _hudQueried;
+        private static float _gateLostAt = -1f;
+        private const float GateGraceSec = 0.75f;
 
         internal static void BeginFrame()
         {
@@ -45,7 +47,21 @@ namespace MissileCameraRemoteControl.Access
                     _fsQueried = true;
                 }
 
-                return _fsActive;
+                if (_fsActive)
+                {
+                    _gateLostAt = -1f;
+                    return true;
+                }
+
+                if (Control.RemoteControlSession.Controlled != null)
+                {
+                    if (_gateLostAt < 0f)
+                        _gateLostAt = Time.unscaledTime;
+                    if (Time.unscaledTime - _gateLostAt < GateGraceSec)
+                        return true;
+                }
+
+                return false;
             }
         }
 
@@ -56,7 +72,8 @@ namespace MissileCameraRemoteControl.Access
                 BeginFrame();
                 if (!_feedQueried)
                 {
-                    _feedCam = MissileCameraFsAccess.QueryFeedCameraRaw();
+                    _feedCam = MissileCameraFsAccess.QueryFeedCameraRaw()
+                        ?? McBaseBridgeAccess.TryGetBridgeFeedCamera();
                     _feedQueried = true;
                 }
 

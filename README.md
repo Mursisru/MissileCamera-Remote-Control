@@ -155,17 +155,37 @@ Point game / reference paths via a local `Directory.Build.props` (not committed)
 
 See [CHANGELOG.md](CHANGELOG.md).
 
-### 2.0.0 highlights (since 1.0.0)
+---
 
-- Formation follow (`P`) + optional auto-engage; terminal impact latch
-- Soft MC dependency + GitHub update check prompts
-- Extra whitelist: AGM-68D, AAM-46 Longstrong, 76mm DLG Shell (shared WeaponInfo stacking)
-- Remappable aim schemes (WASD / Arrows / NumPad / Custom)
-- Hot-path Seek skip-set / latches / aim dedupe
-- Ballistic / long-flight terrain safety; impact-fuse & cook-off fixes
-- Aim anti-flip (no random reverse turns); dive ray-resolve
-- Official-clone-only control by default (`AllowAnyMunition` opt-in)
-- Manual detonate (Space) + AAM proximity gates
+## NOXMFD integration
+
+Remote Control works through MissileCamera's seeker feed. Besides cockpit fullscreen (`K`), you can pilot from **[NOXMFD](https://github.com/roke77/NOXMFD)** via the companion extension **[NOXMFD: RC Missile Camera](https://github.com/Mursisru/NOXMFD-Extension-Remote-Control-Missile-Camera)**.
+
+> [!NOTE]
+> **Install order:** BepInEx 5 → MissileCamera → **this plugin** → NOXMFD → `NOXMFD.RcMissileCamera.dll`.
+
+When the extension's **MISSILE CAMERA** page is open, `McBridge.RequestCapture(true)` keeps the feed live headlessly. `McRcBridge` treats bridge capture like fullscreen for control eligibility (`IsControlAllowed`), so **TAKE / aim / throttle / formation / detonate** work from the browser without pressing `K`.
+
+| Surface | In cockpit FS (`K`) | NOXMFD extension page |
+| :--- | :--- | :--- |
+| Take / release | `T` | TAKE / RELEASE buttons |
+| Afterburner | Hold Left Shift | **AB** click-toggle |
+| Aim | Mouse / WASD / etc. | Drag on feed surface |
+| Manual detonate | Hold Space ~600 ms | Hold DETONATE ~600 ms |
+
+Bridge-side performance tuning (render FPS, JPEG size, marker labels, suppress duplicate cockpit MFD) lives in MissileCamera's **`[MissileCameraBridge]`** config — see the [MissileCamera README](https://github.com/Mursisru/MissileCamera#missilecamerabridge).
+
+---
+
+## Credits
+
+### Thanks to project contributors
+
+[![Contributors](https://contrib.rocks/image?repo=Mursisru/MissileCamera-Remote-Control)](https://github.com/Mursisru/MissileCamera-Remote-Control/graphs/contributors)
+
+- **[Mursisru](https://github.com/Mursisru)** — MissileCamera: Remote Control author, maintenance, and releases
+- **[roke77](https://github.com/roke77)** — [NOXMFD](https://github.com/roke77/NOXMFD) (browser MFD host for the RC Missile Camera page)
+- **[lupfine](https://github.com/lupfine)** — original remote-camera / Bridge integration concept
 
 ---
 

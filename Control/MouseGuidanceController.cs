@@ -176,7 +176,16 @@ namespace MissileCameraRemoteControl.Control
             if (!RemoteControlSession.IsControlling(missile))
                 return;
 
-            Camera? feed = MissileCameraFsAccess.TryGetFeedCamera();
+            if (!MissileCameraFsAccess.IsRealFullscreenActive())
+            {
+                FsAimReticle.SetVisible(false);
+                return;
+            }
+
+            FsAimReticle.SetVisible(true);
+
+            Camera? feed = MissileCameraFsAccess.TryGetFeedCamera()
+                ?? McBaseBridgeAccess.TryGetBridgeFeedCamera();
             Transform mt = missile.transform;
 
             Vector3 aimDir = _desiredAimDir.sqrMagnitude > 1e-8f ? _desiredAimDir.normalized : mt.forward;
