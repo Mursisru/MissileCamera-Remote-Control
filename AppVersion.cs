@@ -2,7 +2,7 @@ namespace MissileCameraRemoteControl
 {
     internal static class AppVersion
     {
-        public const string ReleaseBase = "2.0.2";
+        public const string ReleaseBase = "2.1.0";
         public const string BepInSemVer = ReleaseBase;
         public const string DisplayVersion = ReleaseBase;
     }

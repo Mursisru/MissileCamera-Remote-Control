@@ -4,6 +4,11 @@ All notable changes to **MissileCamera: Remote Control** are documented in this 
 
 ## [Unreleased]
 
+## [2.1.0] - 2026-08-22
+
+> [!IMPORTANT]
+> **NOXMFD bridge release** — RC control and feed work when MissileCamera `McBridge.RequestCapture` is active. Pair with MissileCamera **2.1.0**.
+
 ### Added
 
 - **NOXMFD bridge capture** — `IsControlAllowed` and feed camera resolve when MissileCamera `McBridge.RequestCapture` is active (headless seeker for browser MFD).
