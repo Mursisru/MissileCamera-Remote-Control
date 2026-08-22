@@ -22,7 +22,7 @@ namespace MissileCameraRemoteControl.Control
 
         internal static void Toggle()
         {
-            if (!MissileCameraFsAccess.IsFullscreenActive)
+            if (!MissileCameraFsAccess.IsControlAllowed)
                 return;
             if (_open)
                 Close();
@@ -32,7 +32,7 @@ namespace MissileCameraRemoteControl.Control
 
         internal static void Open()
         {
-            if (!MissileCameraFsAccess.IsFullscreenActive)
+            if (!MissileCameraFsAccess.IsControlAllowed)
                 return;
             RemoteControlSession.RefreshPool();
             _items.Clear();
@@ -96,7 +96,7 @@ namespace MissileCameraRemoteControl.Control
             if (!_open)
                 return;
 
-            if (!MissileCameraFsAccess.IsFullscreenActive)
+            if (!MissileCameraFsAccess.IsControlAllowed)
             {
                 Close();
                 return;

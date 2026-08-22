@@ -30,14 +30,18 @@ namespace MissileCameraRemoteControl.Access
             _hudRoot = null;
         }
 
-        internal static bool IsFullscreenActive
+        // True either when the pilot is really in fullscreen, or when a bridge consumer has an
+        // active capture request (McBaseBridgeAccess.IsCaptureActive) — not merely whenever some
+        // owned missile happens to be trackable.
+        internal static bool IsControlAllowed
         {
             get
             {
                 BeginFrame();
                 if (!_fsQueried)
                 {
-                    _fsActive = MissileCameraFsAccess.QueryFullscreenActiveRaw();
+                    _fsActive = MissileCameraFsAccess.QueryFullscreenActiveRaw()
+                        || McBaseBridgeAccess.IsCaptureActive;
                     _fsQueried = true;
                 }
 

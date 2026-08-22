@@ -7,7 +7,8 @@ namespace MissileCameraRemoteControl.Control
     /// <summary>
     /// WT aim: reticle = desired; SetAimpoint = command (gLimit slew, full converge to marker).
     /// </summary>
-    internal static class MouseGuidanceController
+    // Continued in Bridge/MouseGuidanceController.Bridge.cs
+    internal static partial class MouseGuidanceController
     {
         private const float MouseDegPerUnit = 1.25f;
         private const float MouseDeadzone = 0.02f;
@@ -79,6 +80,9 @@ namespace MissileCameraRemoteControl.Control
                 return;
 
             _lastMissile = missile;
+
+            if (!RcConfig.PhysicalAimEnabled.Value)
+                return;   // external aim (InjectExternal) is a separate channel — unaffected by this
 
             if (Input.GetMouseButton(1))
                 return;

@@ -9,32 +9,39 @@ namespace MissileCameraRemoteControl.Control
     /// FS + RC: ManualDetonate (default Space) → vanilla Detonate via allow gate.
     /// Nuclear warheads: refuse airburst — only near terrain/sea.
     /// </summary>
-    internal static class RcManualDetonate
+    // Continued in Bridge/RcManualDetonate.Bridge.cs
+    internal static partial class RcManualDetonate
     {
         private const float NukeSurfaceMaxAltM = 40f;
         private static float _nextNukeHint;
 
         internal static void Tick()
         {
-            if (!RcConfig.Enabled.Value)
-                return;
-            if (!MissileCameraFsAccess.IsFullscreenActive)
-                return;
-            if (!RemoteControlSession.IsActive)
-                return;
-
-            Missile? m = RemoteControlSession.Controlled;
-            if (m == null || m.disabled)
-                return;
-            if (!RemoteControlSession.OwnsMissile(m))
-                return;
-            if (!AuthorityGate.CanControl(m))
+            Missile? m = CanDetonate();
+            if (m == null)
                 return;
 
             if (!KeybindPoll.IsDown(RcConfig.ManualDetonate.Value))
                 return;
 
             TryDetonate(m);
+        }
+
+        /// <summary>Guard chain shared by the physical key (Tick above) and the external channel
+        /// (Bridge/RcManualDetonate.Bridge.cs TriggerExternal) so the two can't silently drift
+        /// apart. Returns the missile that's clear to detonate, or null if any guard rejects.</summary>
+        private static Missile? CanDetonate()
+        {
+            if (!RcConfig.Enabled.Value) return null;
+            if (!MissileCameraFsAccess.IsControlAllowed) return null;
+            if (!RemoteControlSession.IsActive) return null;
+
+            Missile? m = RemoteControlSession.Controlled;
+            if (m == null || m.disabled) return null;
+            if (!RemoteControlSession.OwnsMissile(m)) return null;
+            if (!AuthorityGate.CanControl(m)) return null;
+
+            return m;
         }
 
         private static void TryDetonate(Missile missile)

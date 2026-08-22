@@ -8,7 +8,8 @@ using UnityEngine;
 namespace MissileCameraRemoteControl.Control
 {
     /// <summary>Active RC session — only while MissileCamera fullscreen is up.</summary>
-    internal static class RemoteControlSession
+    // Continued in Bridge/RemoteControlSession.Bridge.cs
+    internal static partial class RemoteControlSession
     {
         private static Missile? _controlled;
         private static readonly List<Missile> _pool = new List<Missile>(32);
@@ -60,7 +61,7 @@ namespace MissileCameraRemoteControl.Control
 
             _cachedCanControl = AuthorityGate.CanControl(_controlled);
             _cachedCanControlMissile = _controlled;
-            _cachedIsActive = _cachedCanControl && MissileCameraFsAccess.IsFullscreenActive;
+            _cachedIsActive = _cachedCanControl && MissileCameraFsAccess.IsControlAllowed;
         }
 
         internal static bool CachedCanControl(Missile missile)
@@ -113,7 +114,7 @@ namespace MissileCameraRemoteControl.Control
 
         internal static void ToggleNearest()
         {
-            if (!MissileCameraFsAccess.IsFullscreenActive)
+            if (!MissileCameraFsAccess.IsControlAllowed)
             {
                 RcPlugin.ModLogger?.LogInfo("RC: enter MissileCamera Fullscreen (default K) before remote control.");
                 return;
@@ -133,6 +134,14 @@ namespace MissileCameraRemoteControl.Control
             Take(best);
         }
 
+        /// <summary>Take-eligibility check shared by PickForTake (below) and
+        /// Bridge/RemoteControlSession.Bridge.cs's TryTakeAt, so the two entry points can't
+        /// disagree about what "controllable" means.</summary>
+        private static bool IsEligible(Missile? candidate) =>
+            candidate != null && !candidate.disabled
+            && AuthorityGate.CanControl(candidate) && AuthorityGate.IsAllied(candidate)
+            && MissileAccess.IsRcControllable(candidate);
+
         /// <summary>Prefer the missile on the FS feed; fallback nearest to ownship.</summary>
         private static Missile? PickForTake(List<Missile> pool)
         {
@@ -150,9 +159,7 @@ namespace MissileCameraRemoteControl.Control
                             return followed;
                     }
 
-                    if (MissileAccess.IsRcControllable(followed)
-                        && AuthorityGate.CanControl(followed)
-                        && AuthorityGate.IsAllied(followed))
+                    if (IsEligible(followed))
                         return followed;
 
                     // Do not silently Take a different missile while FS shows another — that felt like "T does nothing".
@@ -179,7 +186,7 @@ namespace MissileCameraRemoteControl.Control
 
         internal static void Take(Missile missile)
         {
-            if (!MissileCameraFsAccess.IsFullscreenActive)
+            if (!MissileCameraFsAccess.IsControlAllowed)
                 return;
             if (missile == null || !AuthorityGate.CanControl(missile) || !AuthorityGate.IsAllied(missile))
                 return;
@@ -219,7 +226,7 @@ namespace MissileCameraRemoteControl.Control
                 return;
             }
 
-            if (_controlled != null && !MissileCameraFsAccess.IsFullscreenActive)
+            if (_controlled != null && !MissileCameraFsAccess.IsControlAllowed)
             {
                 RcMissilePickerUi.Close();
                 Release();

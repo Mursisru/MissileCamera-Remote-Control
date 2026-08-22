@@ -13,7 +13,8 @@ namespace MissileCameraRemoteControl.Control
     /// Lost link: throttle locked at 1, boost blocked.
     /// Degraded: thr locked at 1, AB still allowed (optical LoS to own jet often fails in FS).
     /// </summary>
-    internal static class ThrottleController
+    // Continued in Bridge/ThrottleController.Bridge.cs
+    internal static partial class ThrottleController
     {
         private const float RampPerSec = 2.85f;
         private const float TapStep = 0.1f;
@@ -39,6 +40,7 @@ namespace MissileCameraRemoteControl.Control
             _throttle = 1f;
             _appliedThrottle = float.NaN;
             _boost = false;
+            _externalBoostHeld = false;
             _engine = RcEngineKind.Jet;
         }
 
@@ -116,8 +118,9 @@ namespace MissileCameraRemoteControl.Control
 
         private static void ResolveBoost(Missile missile)
         {
-            // AB only from afterburner bind + fuel — NEVER from formation FOLLOW.
-            _boost = KeybindPoll.IsHeld(RcConfig.Boost.Value) && MissileAccess.HasMotorFuel(missile);
+            // AB only from afterburner bind (physical or external) + fuel — NEVER from formation FOLLOW.
+            _boost = (KeybindPoll.IsHeld(RcConfig.Boost.Value) || _externalBoostHeld)
+                && MissileAccess.HasMotorFuel(missile);
         }
 
         internal static bool TryGetMotorOverride(Missile missile, out float effectiveThrottle, out float burnMult)

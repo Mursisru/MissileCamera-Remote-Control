@@ -3,7 +3,8 @@ using UnityEngine;
 
 namespace MissileCameraRemoteControl.Config
 {
-    internal static class RcConfig
+    // Continued in Bridge/RcConfig.Bridge.cs
+    internal static partial class RcConfig
     {
         internal static bool IsBound { get; private set; }
 
@@ -78,6 +79,7 @@ namespace MissileCameraRemoteControl.Config
                     "How to steer world-space aim under RC.",
                     new AcceptableValueList<string>(
                         "Mouse", "WASD", "Arrows", "NumPadArrows", "Custom")));
+            BindExtras(config);
             MouseSensitivity = config.Bind("Control", "MouseSensitivity", 0.08f,
                 "Mouse aim rate for world-space WT reticle (lower = smoother).");
             KeyAimSensitivity = config.Bind("Control", "KeyAimSensitivity", 1f,

@@ -63,7 +63,7 @@ namespace MissileCameraRemoteControl.Config
         /// <summary>FS+RC: Space/manual bind is Harmony-eaten — poll via passthrough.</summary>
         private static bool ShouldPassthroughEat(KeyCode key)
         {
-            if (!MissileCameraFsAccess.IsFullscreenActive || !RemoteControlSession.IsActive)
+            if (!MissileCameraFsAccess.IsControlAllowed || !RemoteControlSession.IsActive)
                 return false;
 
             KeyCode manual = RcConfig.ManualDetonate.Value.MainKey;

@@ -23,7 +23,7 @@ namespace MissileCameraRemoteControl.Access
         private static PropertyInfo? _hudRootProp;
         private static MethodInfo? _tryBoreViewport;
 
-        internal static bool IsFullscreenActive => RcFrameCache.IsFullscreenActive;
+        internal static bool IsControlAllowed => RcFrameCache.IsControlAllowed;
 
         internal static Camera? TryGetFeedCamera() => RcFrameCache.FeedCamera;
 
