@@ -2,6 +2,18 @@
 
 All notable changes to **MissileCamera: Remote Control** are documented in this file.
 
+## [Unreleased]
+
+### Added
+
+- **NOXMFD bridge capture** — `IsControlAllowed` and feed camera resolve when MissileCamera `McBridge.RequestCapture` is active (headless seeker for browser MFD).
+- Release grace (~0.75 s) when bridge/fullscreen gate drops while still controlling.
+
+### Fixed
+
+- Aim reticle / mouse guidance feed-camera fallback for headless bridge rendering.
+- `IsRealFullscreenActive` gating for on-screen FS reticle (bridge preview no longer treated as true fullscreen).
+
 ## [2.0.2] - 2026-08-20
 
 ### Fixed
