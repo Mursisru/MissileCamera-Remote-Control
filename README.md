@@ -181,7 +181,7 @@ Bridge-side performance tuning (render FPS, JPEG size, marker labels, suppress d
 
 ### Thanks to project contributors
 
-[![Contributors](https://raw.githubusercontent.com/Mursisru/MissileCamera-Remote-Control/dev/.github/contributors.svg)](https://github.com/Mursisru/MissileCamera-Remote-Control/graphs/contributors)
+[![Contributors](https://contrib.rocks/image?repo=Mursisru/MissileCamera-Remote-Control)](https://github.com/Mursisru/MissileCamera-Remote-Control/graphs/contributors)
 
 - **[Mursisru](https://github.com/Mursisru)** — MissileCamera: Remote Control author, maintenance, and releases
 - **[roke77](https://github.com/roke77)** — [NOXMFD](https://github.com/roke77/NOXMFD) (browser MFD host for the RC Missile Camera page)
