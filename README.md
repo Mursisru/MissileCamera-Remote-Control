@@ -179,7 +179,7 @@ Bridge-side performance tuning (render FPS, JPEG size, marker labels, suppress d
 
 ## Credits
 
-### 💗 Благодарность участникам проекта
+### Thanks to project contributors
 
 <table align="center">
   <tr>
