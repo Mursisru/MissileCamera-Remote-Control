@@ -17,9 +17,12 @@ namespace MissileCameraRemoteControl.Access
         private static float _nextAttempt;
 
         private static Func<bool>? _isCaptureActive;
+        private static Func<Camera>? _feedCamera;
 
         internal static bool Available => EnsureResolved();
         internal static bool IsCaptureActive => Available && _isCaptureActive!();
+        internal static Camera? TryGetBridgeFeedCamera() =>
+            Available && _feedCamera != null ? _feedCamera() : null;
 
         private static bool EnsureResolved()
         {
@@ -44,8 +47,12 @@ namespace MissileCameraRemoteControl.Access
                 if (ver < MinApiVersion) return false;
 
                 MethodInfo? get = t.GetProperty("IsCaptureActive", BindingFlags.Public | BindingFlags.Static)?.GetGetMethod();
-                if (get == null) return false;   // base mod too old to have IsCaptureActive — same fallback
+                if (get == null) return false;
                 _isCaptureActive = (Func<bool>)Delegate.CreateDelegate(typeof(Func<bool>), get);
+
+                MethodInfo? feedGet = t.GetProperty("FeedCamera", BindingFlags.Public | BindingFlags.Static)?.GetGetMethod();
+                if (feedGet != null)
+                    _feedCamera = (Func<Camera>)Delegate.CreateDelegate(typeof(Func<Camera>), feedGet);
 
                 _resolved = true;
                 return true;

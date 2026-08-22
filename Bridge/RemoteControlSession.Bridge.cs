@@ -29,6 +29,8 @@ namespace MissileCameraRemoteControl.Control
         {
             if (!MissileCameraFsAccess.IsControlAllowed)
                 return false;
+
+            RefreshPool();
             if (index < 0 || index >= _pool.Count)
                 return false;
 

@@ -48,6 +48,8 @@ namespace MissileCameraRemoteControl.Control
         {
             if (!_visible)
                 return;
+            if (!Access.MissileCameraFsAccess.IsRealFullscreenActive())
+                return;
             EnsureUi();
             if (!inFront || _markerRt == null)
                 return;

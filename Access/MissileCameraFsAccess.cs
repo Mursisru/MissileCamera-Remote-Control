@@ -25,6 +25,8 @@ namespace MissileCameraRemoteControl.Access
 
         internal static bool IsControlAllowed => RcFrameCache.IsControlAllowed;
 
+        internal static bool IsRealFullscreenActive() => QueryFullscreenActiveRaw();
+
         internal static Camera? TryGetFeedCamera() => RcFrameCache.FeedCamera;
 
         internal static RectTransform? TryGetFeedViewRect() => RcFrameCache.FeedViewRect;

@@ -202,7 +202,7 @@ namespace MissileCameraRemoteControl.Control
             _gateFrame = -1;
             MouseGuidanceController.Reset();
             RcLinkQuality.Reset();
-            FsAimReticle.SetVisible(true);
+            FsAimReticle.SetVisible(MissileCameraFsAccess.IsRealFullscreenActive());
             RcAircraftTargetSnapshot.Capture();
             ThrottleController.OnTakeControl(missile);
             RcUprightAssist.OnTakeControl(missile);
